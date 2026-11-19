@@ -19,6 +19,7 @@ import {
 } from "viem";
 import { AppNav } from "@/components/AppNav";
 import { Countdown } from "@/components/Countdown";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -36,11 +37,7 @@ import {
   LeaseStateLabel,
   stringToBytes32,
 } from "@/lib/chain/arc";
-import {
-  loadSavedSession,
-  sendSponsoredCalls,
-  type SavedPasskeySession,
-} from "@/lib/chain/wallet";
+import { sendSponsoredCalls } from "@/lib/chain/wallet";
 import { cn } from "@/lib/utils";
 import type { OnchainLease, StoredLeaseMeta } from "@/components/useLeaseLiveState";
 
@@ -50,7 +47,7 @@ interface EnrichedLease {
 }
 
 export default function HomePage() {
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
   const [leases, setLeases] = useState<EnrichedLease[]>([]);
   const [chainNowSec, setChainNowSec] = useState<number>(() =>
     Math.floor(Date.now() / 1000),
@@ -138,12 +135,18 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    const saved = loadSavedSession();
-    setSession(saved);
-    loadLeases(saved?.address);
-    const timer = setInterval(() => loadLeases(saved?.address), 2000);
-    return () => clearInterval(timer);
-  }, [loadLeases]);
+    const addr = session?.address;
+    const first = setTimeout(() => {
+      void loadLeases(addr);
+    }, 0);
+    const timer = setInterval(() => {
+      void loadLeases(addr);
+    }, 2000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [loadLeases, session?.address]);
 
   const totalProtected = leases.reduce((acc, item) => {
     if (item.onchain && (item.onchain.state === 1 || item.onchain.state === 2)) {

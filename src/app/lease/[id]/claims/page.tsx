@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { encodeFunctionData, parseUnits, type Hex } from "viem";
 import {
@@ -14,6 +14,7 @@ import {
 import { LeaseShell } from "@/components/LeaseShell";
 import { Countdown } from "@/components/Countdown";
 import { useLeaseLiveState } from "@/components/useLeaseLiveState";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { RoomViewer, type SurfaceTapEvent } from "@/components/three/RoomViewer";
 import type { SpatialPinItem } from "@/components/three/PinMarker";
 import { Badge } from "@/components/ui/badge";
@@ -35,9 +36,7 @@ import {
 } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
-  loadSavedSession,
   sendSponsoredCalls,
-  type SavedPasskeySession,
 } from "@/lib/chain/wallet";
 import {
   canonicalizeAndHash,
@@ -63,7 +62,7 @@ export default function LeaseClaimsPage({
 }) {
   const { id: leaseId } = use(params);
   const live = useLeaseLiveState(leaseId);
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
 
   // Landlord claim composer
   const [draftClaims, setDraftClaims] = useState<DraftClaimPin[]>([]);
@@ -78,10 +77,6 @@ export default function LeaseClaimsPage({
     normal?: [number, number, number];
     nonce: number;
   } | null>(null);
-
-  useEffect(() => {
-    setSession(loadSavedSession());
-  }, []);
 
   const isLandlord =
     session &&

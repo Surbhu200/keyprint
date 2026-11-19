@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { MapPin, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
 import { SealAnimation } from "@/components/SealAnimation";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { RoomViewer, type SurfaceTapEvent } from "@/components/three/RoomViewer";
 import type { SpatialPinItem } from "@/components/three/PinMarker";
 import { Badge } from "@/components/ui/badge";
@@ -22,9 +23,7 @@ import {
 } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
-  loadSavedSession,
   sendSponsoredCalls,
-  type SavedPasskeySession,
 } from "@/lib/chain/wallet";
 import { sha256Blob } from "@/lib/evidence/hash";
 import {
@@ -46,7 +45,7 @@ interface DraftPin {
 }
 
 export default function SoloNewUnitPage() {
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
   const [unitName, setUnitName] = useState("My Apartment · Move-in");
   const [scanUrl, setScanUrl] = useState(REFERENCE_MOVE_IN_URL);
   const [scanFile, setScanFile] = useState<File | null>(null);
@@ -65,10 +64,6 @@ export default function SoloNewUnitPage() {
     sealedAt: string;
     manifestJson: string;
   } | null>(null);
-
-  useEffect(() => {
-    setSession(loadSavedSession());
-  }, []);
 
   const handleScanChange = (file: File) => {
     setScanFile(file);

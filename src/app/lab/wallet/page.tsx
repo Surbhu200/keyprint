@@ -11,6 +11,7 @@ import {
   Upload,
 } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,19 +28,17 @@ import {
   formatNativeUsdcFee,
 } from "@/lib/chain/arc";
 import {
-  loadSavedSession,
   loginPasskeyAccount,
   readUsdcBalance,
   registerPasskeyAccount,
   sendSponsoredUsdcTransfer,
-  type SavedPasskeySession,
   type UserOpResult,
 } from "@/lib/chain/wallet";
 import { sha256Blob } from "@/lib/evidence/hash";
 import { getSignedReadUrl, uploadToPrivateStorage } from "@/lib/supabase/upload";
 
 export default function WalletLabPage() {
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
   const [username, setUsername] = useState("renter-demo");
   const [balance, setBalance] = useState<bigint | null>(null);
   const [recipient, setRecipient] = useState("");
@@ -57,12 +56,19 @@ export default function WalletLabPage() {
   } | null>(null);
 
   useEffect(() => {
-    const saved = loadSavedSession();
-    setSession(saved);
-    if (saved) {
-      readUsdcBalance(saved.address).then(setBalance).catch(() => setBalance(null));
-    }
-  }, []);
+    if (!session?.address) return;
+    let active = true;
+    readUsdcBalance(session.address)
+      .then((b) => {
+        if (active) setBalance(b);
+      })
+      .catch(() => {
+        if (active) setBalance(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session?.address]);
 
   const refreshBalance = async (addr: Address) => {
     setBusy("balance");
@@ -81,7 +87,6 @@ export default function WalletLabPage() {
     setBusy("register");
     try {
       const s = await registerPasskeyAccount(username);
-      setSession(s);
       await refreshBalance(s.address);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Passkey registration failed.");
@@ -95,7 +100,6 @@ export default function WalletLabPage() {
     setBusy("login");
     try {
       const s = await loginPasskeyAccount(username || undefined);
-      setSession(s);
       await refreshBalance(s.address);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Passkey sign-in failed.");

@@ -28,9 +28,8 @@ async function trySettleLease(leaseId: Hex) {
   const publicClient = createArcPublicClient();
 
   // Always simulate first so we never waste keeper USDC gas before the deadline passes.
-  let simResult;
   try {
-    simResult = await publicClient.simulateContract({
+    await publicClient.simulateContract({
       address: escrow,
       abi: KEYPRINT_ESCROW_ABI,
       functionName: "settle",

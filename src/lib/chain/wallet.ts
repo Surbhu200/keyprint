@@ -58,6 +58,10 @@ export interface UserOpResult {
 }
 
 const STORAGE_KEY = "keyprint.passkey.session.v1";
+const SESSION_EVENT = "keyprint-session-change";
+
+let cachedRawSession: string | null = null;
+let cachedParsedSession: SavedPasskeySession | null = null;
 
 export function getCircleConfig(): { clientUrl: string; clientKey: string } {
   const clientUrl =
@@ -75,25 +79,51 @@ export function loadSavedSession(): SavedPasskeySession | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SavedPasskeySession;
-    if (!parsed?.address || !parsed?.credential?.id || !parsed?.credential?.publicKey) {
+    if (raw === cachedRawSession) return cachedParsedSession;
+    cachedRawSession = raw;
+    if (!raw) {
+      cachedParsedSession = null;
       return null;
     }
+    const parsed = JSON.parse(raw) as SavedPasskeySession;
+    if (!parsed?.address || !parsed?.credential?.id || !parsed?.credential?.publicKey) {
+      cachedParsedSession = null;
+      return null;
+    }
+    cachedParsedSession = parsed;
     return parsed;
   } catch {
+    cachedParsedSession = null;
     return null;
   }
 }
 
+export function subscribePasskeySession(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const handler = () => callback();
+  window.addEventListener("storage", handler);
+  window.addEventListener(SESSION_EVENT, handler);
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener(SESSION_EVENT, handler);
+  };
+}
+
 export function saveSession(session: SavedPasskeySession): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  const raw = JSON.stringify(session);
+  cachedRawSession = raw;
+  cachedParsedSession = session;
+  window.localStorage.setItem(STORAGE_KEY, raw);
+  window.dispatchEvent(new Event(SESSION_EVENT));
 }
 
 export function clearSession(): void {
   if (typeof window === "undefined") return;
+  cachedRawSession = null;
+  cachedParsedSession = null;
   window.localStorage.removeItem(STORAGE_KEY);
+  window.dispatchEvent(new Event(SESSION_EVENT));
 }
 
 function toP256Credential(saved: { id: string; publicKey: Hex }): P256Credential {

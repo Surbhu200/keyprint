@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Fingerprint, ShieldCheck } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -14,31 +15,24 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  loadSavedSession,
   loginPasskeyAccount,
   registerPasskeyAccount,
-  type SavedPasskeySession,
 } from "@/lib/chain/wallet";
 import { cn } from "@/lib/utils";
 
 export default function StartPage() {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
   const [busy, setBusy] = useState<"register" | "login" | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setSession(loadSavedSession());
-  }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setBusy("register");
     try {
-      const s = await registerPasskeyAccount(name.trim() || "Renter");
-      setSession(s);
+      await registerPasskeyAccount(name.trim() || "Renter");
       router.push("/home");
     } catch (err) {
       setError(
@@ -55,8 +49,7 @@ export default function StartPage() {
     setError(null);
     setBusy("login");
     try {
-      const s = await loginPasskeyAccount(name.trim() || undefined);
-      setSession(s);
+      await loginPasskeyAccount(name.trim() || undefined);
       router.push("/home");
     } catch (err) {
       setError(

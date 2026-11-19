@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { encodeFunctionData, erc20Abi, type Hex } from "viem";
 import {
@@ -13,6 +13,7 @@ import {
 import { LeaseShell } from "@/components/LeaseShell";
 import { SealAnimation } from "@/components/SealAnimation";
 import { useLeaseLiveState } from "@/components/useLeaseLiveState";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { RoomViewer, type SurfaceTapEvent } from "@/components/three/RoomViewer";
 import type { SpatialPinItem } from "@/components/three/PinMarker";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -32,9 +33,7 @@ import {
 } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
-  loadSavedSession,
   sendSponsoredCalls,
-  type SavedPasskeySession,
 } from "@/lib/chain/wallet";
 import { sha256Blob } from "@/lib/evidence/hash";
 import {
@@ -67,7 +66,7 @@ export default function LeaseCapturePage({
 }) {
   const { id: leaseId } = use(params);
   const live = useLeaseLiveState(leaseId);
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
 
   const [scanUrl, setScanUrl] = useState(REFERENCE_MOVE_IN_URL);
   const [scanFile, setScanFile] = useState<File | null>(null);
@@ -84,10 +83,6 @@ export default function LeaseCapturePage({
     txHash: string;
     sealedAt: string;
   } | null>(null);
-
-  useEffect(() => {
-    setSession(loadSavedSession());
-  }, []);
 
   const isRenter =
     session &&

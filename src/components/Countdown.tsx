@@ -44,18 +44,27 @@ export function Countdown({
   releasing,
   onKeeperSettled,
 }: CountdownProps) {
-  const [tickOffset, setTickOffset] = useState(0);
+  const [clock, setClock] = useState<{ base: number; elapsed: number }>({
+    base: chainNowSec,
+    elapsed: 0,
+  });
   const [keeperStatus, setKeeperStatus] = useState<string | null>(null);
   const settledRef = useRef(false);
 
-  // Reset local interpolation whenever a fresh block timestamp arrives
+  // Advance local 1s interpolation anchored to the latest chain block timestamp
   useEffect(() => {
-    setTickOffset(0);
-    const id = setInterval(() => setTickOffset((t) => t + 1), 1000);
+    const id = setInterval(() => {
+      setClock((prev) =>
+        prev.base === chainNowSec
+          ? { base: chainNowSec, elapsed: prev.elapsed + 1 }
+          : { base: chainNowSec, elapsed: 1 },
+      );
+    }, 1000);
     return () => clearInterval(id);
   }, [chainNowSec]);
 
-  const remaining = Math.max(0, deadlineSec - (chainNowSec + tickOffset));
+  const elapsedForBase = clock.base === chainNowSec ? clock.elapsed : 0;
+  const remaining = Math.max(0, deadlineSec - (chainNowSec + elapsedForBase));
   const isExpired = remaining <= 0;
 
   // Poll /api/keeper/settle every 2 seconds once countdown reaches zero

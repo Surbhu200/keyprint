@@ -1,10 +1,11 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import { CheckCircle2, MapPin } from "lucide-react";
 import type { Hex } from "viem";
 import { LeaseShell } from "@/components/LeaseShell";
 import { useLeaseLiveState } from "@/components/useLeaseLiveState";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { RoomViewer, type SurfaceTapEvent } from "@/components/three/RoomViewer";
 import type { SpatialPinItem } from "@/components/three/PinMarker";
 import { Badge } from "@/components/ui/badge";
@@ -13,9 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RecordKind } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
-  loadSavedSession,
   sendSponsoredCalls,
-  type SavedPasskeySession,
 } from "@/lib/chain/wallet";
 import { canonicalizeAndHash, type PinManifestV1 } from "@/lib/evidence/manifest";
 import { REFERENCE_MOVE_IN_URL } from "@/lib/sample/reference";
@@ -27,7 +26,7 @@ export default function LeaseRoomPage({
 }) {
   const { id: leaseId } = use(params);
   const live = useLeaseLiveState(leaseId);
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
   const [pendingTap, setPendingTap] = useState<SurfaceTapEvent | null>(null);
   const [pinText, setPinText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,10 +36,6 @@ export default function LeaseRoomPage({
     normal?: [number, number, number];
     nonce: number;
   } | null>(null);
-
-  useEffect(() => {
-    setSession(loadSavedSession());
-  }, []);
 
   const sealedPins = useMemo(() => {
     return live.records

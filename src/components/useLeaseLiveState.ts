@@ -235,9 +235,16 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
   }, [leaseId]);
 
   useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, 2000);
-    return () => clearInterval(id);
+    const first = setTimeout(() => {
+      void refresh();
+    }, 0);
+    const id = setInterval(() => {
+      void refresh();
+    }, 2000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+    };
   }, [refresh]);
 
   return {

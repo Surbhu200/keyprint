@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { encodeFunctionData, type Hex } from "viem";
 import {
@@ -15,6 +15,7 @@ import {
 import { LeaseShell } from "@/components/LeaseShell";
 import { SealAnimation } from "@/components/SealAnimation";
 import { useLeaseLiveState } from "@/components/useLeaseLiveState";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import {
   AlignmentTool,
   type AlignmentOutput,
@@ -44,9 +45,7 @@ import {
 } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
-  loadSavedSession,
   sendSponsoredCalls,
-  type SavedPasskeySession,
   type SealInput,
 } from "@/lib/chain/wallet";
 import { sha256Blob } from "@/lib/evidence/hash";
@@ -79,7 +78,7 @@ export default function LeaseComparePage({
 }) {
   const { id: leaseId } = use(params);
   const live = useLeaseLiveState(leaseId);
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
 
   const [moveOutFile, setMoveOutFile] = useState<File | null>(null);
   const [moveOutName, setMoveOutName] = useState("apartment-move-out.glb");
@@ -106,10 +105,6 @@ export default function LeaseComparePage({
     normal?: [number, number, number];
     nonce: number;
   } | null>(null);
-
-  useEffect(() => {
-    setSession(loadSavedSession());
-  }, []);
 
   const moveInUrl = live.signedUrls.moveInScan || REFERENCE_MOVE_IN_URL;
   const effectiveMoveOutUrl =

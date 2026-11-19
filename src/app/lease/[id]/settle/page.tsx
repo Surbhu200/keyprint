@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { LeaseShell } from "@/components/LeaseShell";
 import { useLeaseLiveState } from "@/components/useLeaseLiveState";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,11 +29,7 @@ import {
   getEscrowAddress,
   KEYPRINT_ESCROW_ABI,
 } from "@/lib/chain/arc";
-import {
-  loadSavedSession,
-  sendSponsoredCalls,
-  type SavedPasskeySession,
-} from "@/lib/chain/wallet";
+import { sendSponsoredCalls } from "@/lib/chain/wallet";
 
 function useCountUpDollars(target6: bigint, durationMs = 900): string {
   const [val, setVal] = useState(0);
@@ -67,26 +64,31 @@ export default function LeaseSettlePage({
 }) {
   const { id: leaseId } = use(params);
   const live = useLeaseLiveState(leaseId);
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
   const [owedAmount, setOwedAmount] = useState<bigint>(0n);
   const [withdrawing, setWithdrawing] = useState(false);
 
   useEffect(() => {
-    const saved = loadSavedSession();
-    setSession(saved);
     const escrow = getEscrowAddress();
-    if (saved && escrow) {
-      createArcPublicClient()
-        .readContract({
-          address: escrow,
-          abi: KEYPRINT_ESCROW_ABI,
-          functionName: "owed",
-          args: [saved.address],
-        })
-        .then(setOwedAmount)
-        .catch(() => setOwedAmount(0n));
-    }
-  }, [live.lease?.state]);
+    if (!session || !escrow) return;
+    let active = true;
+    createArcPublicClient()
+      .readContract({
+        address: escrow,
+        abi: KEYPRINT_ESCROW_ABI,
+        functionName: "owed",
+        args: [session.address],
+      })
+      .then((amt) => {
+        if (active) setOwedAmount(amt);
+      })
+      .catch(() => {
+        if (active) setOwedAmount(0n);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session, live.lease?.state]);
 
   const renterDisplay = useCountUpDollars(live.lease?.renterPayout ?? 0n);
   const landlordDisplay = useCountUpDollars(live.lease?.landlordPayout ?? 0n);

@@ -1,11 +1,12 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import { encodeFunctionData, type Hex } from "viem";
 import { AlertTriangle, CheckCircle2, UserCheck } from "lucide-react";
 import { LeaseShell } from "@/components/LeaseShell";
 import { SealAnimation } from "@/components/SealAnimation";
 import { useLeaseLiveState } from "@/components/useLeaseLiveState";
+import { usePasskeySession } from "@/components/usePasskeySession";
 import { RoomViewer } from "@/components/three/RoomViewer";
 import type { SpatialPinItem } from "@/components/three/PinMarker";
 import { Badge } from "@/components/ui/badge";
@@ -22,11 +23,7 @@ import {
   KEYPRINT_REGISTRY_ABI,
   RecordKind,
 } from "@/lib/chain/arc";
-import {
-  loadSavedSession,
-  sendSponsoredCalls,
-  type SavedPasskeySession,
-} from "@/lib/chain/wallet";
+import { sendSponsoredCalls } from "@/lib/chain/wallet";
 import { sha256HexToBytes32, sha256Text } from "@/lib/evidence/hash";
 import type { PinManifestV1 } from "@/lib/evidence/manifest";
 import { REFERENCE_MOVE_IN_URL } from "@/lib/sample/reference";
@@ -38,7 +35,7 @@ export default function LeaseReviewPage({
 }) {
   const { id: leaseId } = use(params);
   const live = useLeaseLiveState(leaseId);
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [contestingId, setContestingId] = useState<string | null>(null);
@@ -48,10 +45,6 @@ export default function LeaseReviewPage({
     normal?: [number, number, number];
     nonce: number;
   } | null>(null);
-
-  useEffect(() => {
-    setSession(loadSavedSession());
-  }, []);
 
   const isLandlord =
     session &&
@@ -96,7 +89,7 @@ export default function LeaseReviewPage({
       ids.add(r.record_id.toLowerCase());
     }
     return Array.from(ids).filter((id) => !(live.coSignedMap[id] > 0));
-  }, [live.lease?.moveInRecordId, moveInRecords, live.coSignedMap]);
+  }, [live.lease, moveInRecords, live.coSignedMap]);
 
   const allCoSigned =
     Boolean(live.lease?.moveInRecordId) &&

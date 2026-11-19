@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Info, ShieldCheck, User } from "lucide-react";
-import { loadSavedSession, type SavedPasskeySession } from "@/lib/chain/wallet";
 import { cn } from "@/lib/utils";
 import { DetailsDrawer, type ReceiptLink } from "./DetailsDrawer";
+import { usePasskeySession } from "./usePasskeySession";
 import { buttonVariants } from "./ui/button";
 
 interface AppNavProps {
@@ -15,12 +15,8 @@ interface AppNavProps {
 
 export function AppNav({ receipts }: AppNavProps) {
   const pathname = usePathname();
-  const [session, setSession] = useState<SavedPasskeySession | null>(null);
+  const session = usePasskeySession();
   const [drawerOpen, setDrawerOpen] = useState(false);
-
-  useEffect(() => {
-    setSession(loadSavedSession());
-  }, [pathname]);
 
   const navItems = [
     { href: "/home", label: "Home" },
@@ -98,7 +94,6 @@ export function AppNav({ receipts }: AppNavProps) {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         session={session}
-        onSessionCleared={() => setSession(null)}
         receipts={receipts}
       />
     </>
