@@ -88,23 +88,24 @@ flowchart LR
 
 An entire lease lifecycle on Arc Testnet (**12 transactions**: create, seal move-in, approve, fund, co-sign, seal move-out, end lease, seal claim evidence, file claim, close claims, accept, settle) cost **$0.032331 USDC** total in measured native gas fees:
 
-- **Lease ID:** `0x03233ed03704723f17cc7625d024bf316f17f7ae0e6685524c3205522bd8d9ed`
-- **Co-Signed Move-In Record ID (verifiable live at `/verify`):** `0x92934d0e9167e77d31d663c933fe3e08569c1b0a00592763d740513adbc077d2`
+- **Lease ID:** `0xb43bc65443fd2847b3c37b0fc08035c033a290ddf75707993649f44e1ea2f1a4`
+- **Co-Signed Move-In Record ID (verifiable live at `/verify`):** `0xf832a330403ee154d148051bccdd595d2e82d523142d8ae3dc4950d747818d50`
+- **Total Measured Arc Gas Cost:** **`$0.031613` USDC** across 12 transactions (block `72,986,126`–`72,986,180`)
 
 | Step | Block | Gas Fee (USDC) | Explorer |
 | --- | --- | --- | --- |
-| `createLease` | `72,981,949` | `$0.005127` | [View tx](https://explorer.testnet.arc.io/tx/0xf85d2a1f6f6fc2acf08f708492c519a98f444da68f5cdc07f1ca8510ea3f93ec) |
-| `seal(MoveInScan)` | `72,981,958` | `$0.003045` | [View tx](https://explorer.testnet.arc.io/tx/0x4cc6f20dd02e0e2291b7583133571ac0d5f42e446d90922a17ba4adb650084ac) |
-| `USDC.approve(2 USDC)` | `72,981,967` | `$0.001164` | [View tx](https://explorer.testnet.arc.io/tx/0x5468c776e0fa1f50df131f9bec217311d58a1cdb93f4739aeddf09bafc230615) |
-| `fund(2 USDC)` | `72,981,975` | `$0.003268` | [View tx](https://explorer.testnet.arc.io/tx/0x71ebafb4dbfbb1f49161d1e342a9351973977a2e28ae5f51362a3a9448fd0965) |
-| `acknowledge` (landlord co-sign) | `72,981,984` | `$0.001016` | [View tx](https://explorer.testnet.arc.io/tx/0xfbc76e7f8f91200478277ff2375c6c4eefc275c5740cef418df743027c2043fd) |
-| `seal(MoveOutScan)` | `72,981,986` | `$0.003463` | [View tx](https://explorer.testnet.arc.io/tx/0xa324e123adc0a3e9a4ba68b466741e65229515aafd1fa871ef1d7ddccc66a003) |
-| `endLease` | `72,981,994` | `$0.001776` | [View tx](https://explorer.testnet.arc.io/tx/0x081fd7949c97669411e429615ba8fa7ae2f803064925c96ddbcc7461656059a1) |
-| `seal(ClaimEvidence)` | `72,982,003` | `$0.003463` | [View tx](https://explorer.testnet.arc.io/tx/0xfae175d9054cd7bdf3219cee524ec8995b132b19120c6ebe0dcbe3c39599b7fd) |
-| `fileClaim(1 USDC)` | `72,982,012` | `$0.005821` | [View tx](https://explorer.testnet.arc.io/tx/0xb4c877636527224b16a0f080f51514ec36f5237fe4500d8856e4df7a27f874c3) |
-| `closeClaims` | `72,982,020` | `$0.000692` | [View tx](https://explorer.testnet.arc.io/tx/0x37cdb83a4cf4edacd8f322f312ed9c8f43d99cb883ecf9dd12ca92faaa14e861) |
-| `acceptClaim` | `72,982,029` | `$0.000944` | [View tx](https://explorer.testnet.arc.io/tx/0x8a9bc16e9b6e1539dc64cfc236ac21603ff0db8e4ac31848e225b4e1dd837b1c) |
-| `settle` (`$1` landlord / `$1` renter) | `72,982,031` | `$0.002553` | [View tx](https://explorer.testnet.arc.io/tx/0xffb9426eff0107dd66e232444ff120f59fefd7eb9dce9e20ae519369376dcfc7) |
+| `createLease` | `72,986,126` | `$0.004768` | [View tx](https://explorer.testnet.arc.io/tx/0x2e1fdfc4a23dd512b0dfc7609bd7ee648179b69eff6577cdba454bab51db795c) |
+| `seal(MoveInScan)` | `72,986,127` | `$0.003045` | [View tx](https://explorer.testnet.arc.io/tx/0x8dec8fb7abe28012b87de674f8d12f6709ad0937857a3635a73b86ff51733d26) |
+| `USDC.approve(2 USDC)` | `72,986,129` | `$0.001164` | [View tx](https://explorer.testnet.arc.io/tx/0x20d9c052e595f58844add3730f7d9eb1072ec34ae48c84a03a353923f6a0bbff) |
+| `fund(2 USDC)` | `72,986,131` | `$0.003268` | [View tx](https://explorer.testnet.arc.io/tx/0x2d55caff5ecf5a619844fc86f71f3361c2b2228a72a5cadad603d4d67c4dd2a8) |
+| `acknowledge` (landlord co-sign) | `72,986,140` | `$0.001016` | [View tx](https://explorer.testnet.arc.io/tx/0x0e385aaf44650fb858854374cb7db81df7f233b3f7efbd441880595036670868) |
+| `seal(MoveOutScan)` | `72,986,143` | `$0.003463` | [View tx](https://explorer.testnet.arc.io/tx/0x87989f384178a02ae23e2cd721f705a8a4de55b0b305bd54f67511704baddfa8) |
+| `endLease` | `72,986,145` | `$0.001776` | [View tx](https://explorer.testnet.arc.io/tx/0xf75c154698b3b99b62810fe7ed7579f9f0a4e7068068ef49c93bdf00aa494d05) |
+| `seal(ClaimEvidence)` | `72,986,154` | `$0.003463` | [View tx](https://explorer.testnet.arc.io/tx/0x668f5ed0d872b637ac1336c2cfadaa16850fbfb3dd6699291d7c0b6011a99bb7) |
+| `fileClaim(1 USDC)` | `72,986,162` | `$0.005461` | [View tx](https://explorer.testnet.arc.io/tx/0x846039376d2f30a14baf5355c8a84ce90c695043a96c264d2cd7967b3733f015) |
+| `closeClaims` | `72,986,164` | `$0.000692` | [View tx](https://explorer.testnet.arc.io/tx/0x3d765c9179f35344a5250e1e3c0374b583c2ada1566150f3c2c8474d058abdbf) |
+| `acceptClaim` | `72,986,173` | `$0.000944` | [View tx](https://explorer.testnet.arc.io/tx/0xe6822ec3b085057af19c6760e684cd5b94883f66d3216ab91f1c8d0930a60e28) |
+| `settle` (`$1` landlord / `$1` renter) | `72,986,180` | `$0.002553` | [View tx](https://explorer.testnet.arc.io/tx/0xc68f98a864221173d420503f60096e51b955ac2ced914557f66505d6caf81d1d) |
 
 ---
 
@@ -157,5 +158,5 @@ forge create src/KeyprintEscrow.sol:KeyprintEscrow \
 ## What I Built vs. Used & Honest Limitations
 
 - **Built:** `KeyprintRegistry` and `KeyprintEscrow` smart contracts + full Foundry adversarial/fuzz/invariant suite, RFC 8785 manifest sealing & client-side `/verify`, 4-point Umeyama alignment + `three-mesh-bvh` surface agreement gate, dual-pass scissor time slider, offscreen 4:3 rendering + Claude Vision structured diff + geometric pin matching, settlement keeper, and all consumer screens.
-- **Used:** Scaniverse/Polycam for 3D reconstruction (with Three.js's open-source `minimalistic_modern_bedroom.glb` interior scene prepared as the built-in metric reference move-in/move-out pair until replaced with live iPhone Pro LiDAR scans), Circle Modular Wallets + Gas Station on Arc, Supabase private Storage/Postgres, and Claude Opus 5.5.
+- **Used:** Scaniverse/Polycam for 3D reconstruction (with Meta AI's real-world **Replica Dataset** `apartment_1.glb` RGB-D/LiDAR apartment scan optimized and prepared as the built-in reference move-in/move-out pair — with a clearly disclosed staged floor spill & scan-frame offset on the move-out copy — alongside direct `.glb` import for any phone scan), Circle Modular Wallets + Gas Station on Arc, Supabase private Storage/Postgres, and Claude Opus 5.5.
 - **Honest limitations:** 3D reconstruction comes from an external scanning app (in-app capture with device attestation is next); the move-in review window, alignment gate, and priced-pin schema are enforced by the app while the contract enforces evidence existence, authorship, ordering, deadlines, and payouts; settlement requires a trigger (Keyprint's keeper or any caller); real production deployment requires state-by-state legal review of deposit custody and silence defaults.

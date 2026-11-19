@@ -4,16 +4,12 @@ export const REFERENCE_MOVE_IN_URL = "/models/apartment-move-in.glb";
 export const REFERENCE_MOVE_OUT_URL = "/models/apartment-move-out.glb";
 export const REFERENCE_TAMPERED_URL = "/models/apartment-move-in-tampered.glb";
 
-// Four distinctive non-collinear landmarks across the real bedroom scene (meters):
-//   - Left window frame corner (back wall)
-//   - Right window frame corner (back wall)
-//   - Front-left carpet corner (floor plane)
-//   - Side wall / ceiling trim corner (side wall)
+// Four distinctive non-collinear landmarks across the real Meta Replica apartment scan (meters)
 export const REFERENCE_MOVE_IN_LANDMARKS: Vec3[] = [
-  [-1.18, 1.48, -1.12],
-  [1.18, 1.48, -1.12],
-  [-0.62, 0.015, 0.83],
-  [1.65, 0.95, 0.45],
+  [-1.95, 1.85, -1.65],
+  [1.45, 1.95, -1.55],
+  [-0.85, 0.02, 1.25],
+  [1.85, 0.95, 1.35],
 ];
 
 // Exact scan-frame offset applied to apartment-move-out.glb (12 deg yaw + shift + 0.4% scale)
@@ -36,27 +32,27 @@ export const REFERENCE_ALIGNMENT = solveUmeyama(
 );
 
 export const REFERENCE_VERIFIED_LEASE_ID =
-  "0x03233ed03704723f17cc7625d024bf316f17f7ae0e6685524c3205522bd8d9ed";
+  "0xb43bc65443fd2847b3c37b0fc08035c033a290ddf75707993649f44e1ea2f1a4";
 export const REFERENCE_VERIFIED_MOVE_IN_RECORD_ID =
-  "0x92934d0e9167e77d31d663c933fe3e08569c1b0a00592763d740513adbc077d2";
+  "0xf832a330403ee154d148051bccdd595d2e82d523142d8ae3dc4950d747818d50";
 export const DEFAULT_DEMO_REVIEWER =
   "0xB59A3658D210f3DDbb202d0FbD14373EED43AC3F";
 
-// Key spots in the real modern bedroom scene (move-in metric coordinates)
+// Key spots in the real Meta Replica scanned living room (move-in metric coordinates)
 export const REFERENCE_SPOTS = {
-  // Pre-existing scratch on the side table / headboard area (present in both move-in & move-out)
+  // Pre-existing scratch on the wooden TV console bench (present in both scans)
   deskScratch: {
-    position: [-0.82, 0.34, -0.82] as Vec3,
-    normal: [0.35, 0.8, 0.48] as Vec3,
+    position: [-1.35, 0.56, -0.35] as Vec3,
+    normal: [0.55, 0.72, 0.42] as Vec3,
   },
-  // Staged dark coffee stain painted right at the center of Bedroom_Carpet_0 in move-out
+  // Staged pale spill stain on the dark floor/rug right between the TV console and coffee table
   carpetStain: {
-    position: [0.0, 0.016, 0.382] as Vec3,
+    position: [-0.4415, 0.025, 0.3647] as Vec3,
     normal: [0, 1, 0] as Vec3,
   },
-  // Wall / baseboard area near right side of bedroom
+  // Wall / trim area beside the door
   wallScuffs: {
-    position: [1.15, 0.36, -0.35] as Vec3,
-    normal: [-1, 0.1, 0.2] as Vec3,
+    position: [0.85, 0.48, -0.65] as Vec3,
+    normal: [-0.3, 0.1, 0.95] as Vec3,
   },
 };
