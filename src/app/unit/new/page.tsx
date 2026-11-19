@@ -348,7 +348,7 @@ export default function SoloNewUnitPage() {
               <CardHeader>
                 <CardTitle className="text-base">Apartment &amp; 3D scan</CardTitle>
                 <CardDescription>
-                  Using {scanName}. Export `.glb` from Scaniverse or Polycam, or test with the built-in room scan.
+                  Using {scanName}. Export a .glb from Scaniverse or Polycam, or test with the built-in room scan.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">

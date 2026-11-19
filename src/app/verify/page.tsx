@@ -214,7 +214,9 @@ function VerifyContent() {
 
       {!registryConfigured && (
         <div className="rounded-xl border border-suggestion/30 bg-suggestion/10 px-4 py-3 text-xs text-suggestion">
-          Deploy `KeyprintRegistry` and set `NEXT_PUBLIC_KEYPRINT_REGISTRY_ADDRESS` in `.env.local` to verify against live Arc Testnet records.
+          Deploy <code className="font-mono">KeyprintRegistry</code> and set{" "}
+          <code className="font-mono">NEXT_PUBLIC_KEYPRINT_REGISTRY_ADDRESS</code> in{" "}
+          <code className="font-mono">.env.local</code> to verify against live Arc Testnet records.
         </div>
       )}
 
@@ -381,7 +383,8 @@ function VerifyContent() {
             Offline / downloaded manifest (optional)
           </CardTitle>
           <CardDescription>
-            Have a downloaded evidence bundle or `manifest.json`? Load it here to verify without touching Keyprint&apos;s index at all.
+            Have a downloaded evidence bundle or{" "}
+            <code className="font-mono">manifest.json</code>? Load it here to verify without touching Keyprint&apos;s index at all.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

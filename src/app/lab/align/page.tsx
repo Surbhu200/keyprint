@@ -49,7 +49,7 @@ export default function AlignLabPage() {
               4-Point Umeyama Alignment &amp; Surface Agreement Gate
             </h1>
             <p className="text-sm text-muted-foreground">
-              Load any two `.glb` scans (or use the built-in metric reference apartment scans), tap 4 matching points on at least two walls, solve the similarity transform (`ml-matrix`), and measure surface agreement with `three-mesh-bvh`.
+              Load any two <code className="font-mono">.glb</code> scans (or use the built-in metric reference apartment scans), tap 4 matching points on at least two walls, solve the similarity transform (<code className="font-mono">ml-matrix</code>), and measure surface agreement with <code className="font-mono">three-mesh-bvh</code>.
             </p>
           </div>
           {!usingReference && (
@@ -83,7 +83,7 @@ export default function AlignLabPage() {
           </CardHeader>
           <CardContent className="grid sm:grid-cols-2 gap-4">
             <label className="block space-y-1.5 text-xs font-medium">
-              <span>Move-in `.glb`</span>
+              <span>Move-in (.glb)</span>
               <input
                 type="file"
                 accept=".glb,model/gltf-binary"
@@ -95,7 +95,7 @@ export default function AlignLabPage() {
               />
             </label>
             <label className="block space-y-1.5 text-xs font-medium">
-              <span>Move-out `.glb`</span>
+              <span>Move-out (.glb)</span>
               <input
                 type="file"
                 accept=".glb,model/gltf-binary"

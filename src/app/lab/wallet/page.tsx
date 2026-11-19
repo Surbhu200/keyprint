@@ -164,7 +164,7 @@ export default function WalletLabPage() {
             Arc Testnet Passkey &amp; Private Storage Check
           </h1>
           <p className="text-sm text-muted-foreground">
-            Verify Circle Modular Wallets passkey auth + gas-sponsored 1 USDC transfer on Arc Testnet (`chainId: 5042002`), and direct browser-to-Supabase `.glb` upload.
+            Verify Circle Modular Wallets passkey auth + gas-sponsored 1 USDC transfer on Arc Testnet (chain ID 5042002), and direct browser-to-Supabase .glb upload.
           </p>
         </div>
 
@@ -243,7 +243,7 @@ export default function WalletLabPage() {
               2. Gas-Sponsored Test Transfer (1 USDC on Arc Testnet)
             </CardTitle>
             <CardDescription>
-              Sends 6-decimal ERC-20 USDC (`0x3600...0000`) with `paymaster: true`. Fund the sender via faucet.circle.com first.
+              Sends 6-decimal ERC-20 USDC (0x3600…0000) with paymaster: true. Fund the sender via faucet.circle.com first.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -304,7 +304,7 @@ export default function WalletLabPage() {
               3. Supabase Private Bucket Signed Upload (.glb)
             </CardTitle>
             <CardDescription>
-              Hashes the file in streaming chunks (`hash-wasm`) and uploads directly to your private `keyprint-private` bucket via `/api/upload-url`.
+              Hashes the file in streaming chunks (hash-wasm) and uploads directly to your private keyprint-private bucket via /api/upload-url.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
