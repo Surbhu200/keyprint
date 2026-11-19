@@ -574,7 +574,7 @@ export default function LeaseComparePage({
       const op = await sendSponsoredCalls(
         session,
         [...outCalls, ...extraSealCalls, endLeaseCall],
-        { onSubmitted: () => setBusy("Sealing on Arc…") },
+        { onSubmitted: () => setBusy("Sealing move-out…") },
       );
 
       // Persist manifests (with a local backup and retries; see record-store).
@@ -622,7 +622,7 @@ export default function LeaseComparePage({
       ]);
       if (failedSaves > 0) {
         setError(
-          "Move-out is sealed on Arc, but some details haven't reached Keyprint's index yet. This page will retry next time it opens.",
+          "Move-out is sealed. Details are syncing and will appear automatically.",
         );
       }
 
@@ -758,7 +758,7 @@ export default function LeaseComparePage({
               </CardTitle>
               <CardDescription>
                 {leaseEnded
-                  ? "Sealed on Arc when the lease ended, including what people confirmed or dismissed. AI never prices anything."
+                  ? "Sealed when the lease ended, including what people confirmed or dismissed. AI never prices anything."
                   : "AI compares matched before-and-after views and suggests physical changes. It never prices anything; people decide what is chargeable."}
               </CardDescription>
             </div>

@@ -224,7 +224,7 @@ export default function SoloNewUnitPage() {
       const allCalls = [...scanCalls, ...pinCalls];
       setBusy("Confirm with one touch to seal…");
       const op = await sendSponsoredCalls(session, allCalls, {
-        onSubmitted: () => setBusy("Sealing on Arc…"),
+        onSubmitted: () => setBusy("Sealing record…"),
       });
 
       // Save the exact manifest bytes (local backup + retries; see record-store).
@@ -255,7 +255,7 @@ export default function SoloNewUnitPage() {
       });
       if (failedSaves > 0) {
         setNotice(
-          "Sealed on Arc. Some details haven't reached Keyprint's index yet; they'll be retried the next time you open Keyprint in this browser.",
+          "Sealed. Some details haven't reached Keyprint's index yet; they'll sync the next time you open Keyprint in this browser.",
         );
       }
     } catch (err) {
@@ -473,7 +473,7 @@ export default function SoloNewUnitPage() {
                   onClick={handleSealSolo}
                 >
                   <ShieldCheck className="h-4 w-4" />
-                  {busy ?? (sealedRecord ? "Sealed on Arc" : "Seal my apartment")}
+                  {busy ?? (sealedRecord ? "Sealed ✓" : "Seal my apartment")}
                 </Button>
                 {sealedRecord && (
                   <Link

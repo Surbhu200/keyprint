@@ -255,7 +255,7 @@ export default function LeaseCapturePage({
       const op = await sendSponsoredCalls(
         session,
         [...scanCalls, ...pinCalls, approveCall, fundCall],
-        { onSubmitted: () => setBusy("Sealing on Arc…") },
+        { onSubmitted: () => setBusy("Sealing & protecting deposit…") },
       );
 
       // Save the exact manifest bytes (local backup + retries; see record-store).
@@ -278,7 +278,7 @@ export default function LeaseCapturePage({
       ]);
       if (failedSaves > 0) {
         setNotice(
-          "Sealed on Arc. Some details haven't reached Keyprint's index yet; this page retries them the next time it opens.",
+          "Sealed. Some details haven't reached Keyprint's index yet; this page syncs them automatically.",
         );
       }
 

@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Sparkles,
   User,
-  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DetailsDrawer } from "./DetailsDrawer";
@@ -30,11 +29,6 @@ const PRIMARY_NAV = [
   { href: "/unit/new", label: "Solo Scan", shortLabel: "Scan", icon: ScanLine },
   { href: "/sample", label: "3D Demo", shortLabel: "3D Demo", icon: Box },
   { href: "/verify", label: "Verify Proof", shortLabel: "Verify", icon: ShieldCheck },
-] as const;
-
-const LAB_NAV = [
-  { href: "/lab/wallet", label: "Passkey & Storage Lab" },
-  { href: "/lab/align", label: "3D Alignment Lab" },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -123,28 +117,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Sparkles className="h-4 w-4 shrink-0" />
             <span>Overview</span>
           </Link>
-
-          <div className="pt-5 px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <Wrench className="h-3 w-3" />
-            <span>Tools</span>
-          </div>
-          {LAB_NAV.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "block rounded-xl px-3 py-2 text-xs font-medium transition-colors",
-                  active
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                )}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
         </nav>
 
         <div className="p-3 border-t border-border/70 space-y-2">

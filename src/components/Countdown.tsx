@@ -116,7 +116,7 @@ export function Countdown({
               ? hasManualRelease
                 ? `Tap "${manualReleaseLabel}" to finish.`
                 : "Waiting for the lease to be settled…"
-              : "Waiting for Arc to confirm the deadline…",
+              : "Confirming deadline…",
           );
         }
       } catch {

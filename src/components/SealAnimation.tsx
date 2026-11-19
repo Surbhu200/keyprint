@@ -81,7 +81,7 @@ export function SealAnimation({
         <div>
           <div className="flex items-center gap-1.5 font-semibold text-sealed">
             <Check className="h-4 w-4" />
-            <span>{formattedTime ? `${verb} · ${formattedTime}` : `${verb} on Arc`}</span>
+            <span>{formattedTime ? `${verb} · ${formattedTime}` : `${verb} ✓`}</span>
           </div>
           <p className="text-sm font-medium text-foreground mt-0.5">{title}</p>
           {subtitle && (

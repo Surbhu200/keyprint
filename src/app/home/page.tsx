@@ -549,7 +549,7 @@ export default function HomePage() {
         {lastCreated && (
           <Card className="border-sealed/25">
             <CardContent className="p-5 space-y-2.5 text-sm">
-              <p className="font-medium">Lease created on Arc.</p>
+              <p className="font-medium">Lease created.</p>
               <p className="text-muted-foreground">
                 Send this link to your renter. They&apos;ll see every term before paying the deposit.
               </p>

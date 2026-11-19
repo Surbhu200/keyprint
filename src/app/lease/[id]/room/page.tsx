@@ -145,7 +145,7 @@ export default function LeaseRoomPage({
       });
       if (!saved.ok) {
         setError(
-          "Pin sealed on Arc, but its details haven't reached Keyprint's index yet. This page will retry next time it opens.",
+          "Pin sealed. Its details are still syncing and will appear automatically.",
         );
       }
       setPendingTap(null);

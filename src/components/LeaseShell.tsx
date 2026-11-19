@@ -64,11 +64,11 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
 
   let notice: string | null = null;
   if (!getEscrowAddress()) {
-    notice = "This deployment isn't connected to the Arc escrow contract, so lease details can't load.";
+    notice = "This deployment isn't connected to the protection service yet, so lease details can't load.";
   } else if (live.error && !live.lease) {
-    notice = "Can't reach Arc right now. Retrying every few seconds…";
+    notice = "Can't reach the live record right now. Retrying every few seconds…";
   } else if (!live.loading && !live.lease) {
-    notice = "This lease doesn't exist on Arc. Check the link, or start a new lease from Home.";
+    notice = "This lease wasn't found. Check the link, or start a new lease from Home.";
   }
 
   return (
@@ -83,7 +83,7 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
                 {live.meta?.unit_name || "Apartment Lease"}
               </h1>
               <p className="text-xs text-muted-foreground">
-                Live from Arc · refreshes every few seconds
+                Live record · updates automatically every few seconds
               </p>
             </div>
 
@@ -130,7 +130,7 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
         {live.unverifiedRecordCount > 0 && (
           <p className="text-xs text-muted-foreground">
             {live.unverifiedRecordCount} saved item{live.unverifiedRecordCount === 1 ? "" : "s"} didn&apos;t match
-            {" "}what&apos;s sealed on Arc (or {live.unverifiedRecordCount === 1 ? "is" : "are"} still confirming), so{" "}
+            {" "}what&apos;s sealed (or {live.unverifiedRecordCount === 1 ? "is" : "are"} still confirming), so{" "}
             {live.unverifiedRecordCount === 1 ? "it's" : "they're"} hidden.
           </p>
         )}

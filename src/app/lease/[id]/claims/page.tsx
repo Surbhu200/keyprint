@@ -313,7 +313,7 @@ export default function LeaseClaimsPage({
       const op = await sendSponsoredCalls(
         session,
         [...sealCalls, ...fileCalls, closeCall],
-        { onSubmitted: () => setBusy("Filing on Arc…") },
+        { onSubmitted: () => setBusy("Filing priced claims…") },
       );
 
       const [failed] = await Promise.all([
@@ -337,7 +337,7 @@ export default function LeaseClaimsPage({
       ]);
       if (failed > 0) {
         setError(
-          "Claims are filed on Arc, but their pin details haven't reached Keyprint's index yet. This page will retry next time it opens.",
+          "Claims are filed. Their pin details are syncing and will appear automatically.",
         );
       }
 
