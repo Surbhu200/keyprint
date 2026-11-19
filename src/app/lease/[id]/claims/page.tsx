@@ -36,15 +36,18 @@ import {
 } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
+  friendlyError,
   sendSponsoredCalls,
 } from "@/lib/chain/wallet";
 import {
   canonicalizeAndHash,
-  ZERO_BYTES32,
+  type AlignmentManifestV1,
   type ClaimManifestV1,
   type PinManifestV1,
 } from "@/lib/evidence/manifest";
-import { REFERENCE_MOVE_IN_URL, REFERENCE_SPOTS } from "@/lib/sample/reference";
+import { countsAsMoveInPin } from "@/lib/evidence/pin-rules";
+import { saveRecordManifests } from "@/lib/evidence/record-store";
+import { REFERENCE_SPOTS } from "@/lib/sample/reference";
 import { cn } from "@/lib/utils";
 
 interface DraftClaimPin {
@@ -53,6 +56,33 @@ interface DraftClaimPin {
   normal: [number, number, number];
   title: string;
   dollars: string;
+}
+
+/** The verified Alignment record whose manifest names this lease's move-in and move-out scans. */
+function findSealedAlignment(
+  records: ReadonlyArray<{ kind: number; record_id: string; manifest_json: string }>,
+  lease: { moveInRecordId: string; moveOutRecordId: string } | null,
+): { recordId: Hex; matrix: number[] } | null {
+  if (!lease) return null;
+  for (const r of records) {
+    if (r.kind !== RecordKind.Alignment) continue;
+    let m: AlignmentManifestV1;
+    try {
+      m = JSON.parse(r.manifest_json) as AlignmentManifestV1;
+    } catch {
+      continue;
+    }
+    if (
+      m.type === "keyprint.alignment.v1" &&
+      Array.isArray(m.matrix) &&
+      m.matrix.length === 16 &&
+      String(m.moveInRecordId).toLowerCase() === lease.moveInRecordId.toLowerCase() &&
+      String(m.moveOutRecordId).toLowerCase() === lease.moveOutRecordId.toLowerCase()
+    ) {
+      return { recordId: r.record_id as Hex, matrix: m.matrix };
+    }
+  }
+  return null;
 }
 
 export default function LeaseClaimsPage({
@@ -87,46 +117,72 @@ export default function LeaseClaimsPage({
     live.lease &&
     session.address.toLowerCase() === live.lease.renter.toLowerCase();
 
-  // Move-in pins (only pins sealed in reviewWindow or co-signed count as move-in evidence)
+  // Onchain seal time of the lease's move-in record (records from the hook are verified against Arc).
+  const moveInCreatedAt = useMemo(() => {
+    if (!live.lease) return null;
+    const row = live.records.find(
+      (r) => r.record_id.toLowerCase() === live.lease!.moveInRecordId.toLowerCase(),
+    );
+    return row?.chain_created_at ?? null;
+  }, [live.records, live.lease]);
+
+  // Move-in pins: renter pins sealed within the review window after move-in, or co-signed.
   const moveInPins: MoveInPinRef[] = useMemo(() => {
     return live.records
       .filter((r) => r.kind === RecordKind.Pin)
-      .map((r) => {
+      .map((r): MoveInPinRef | null => {
         try {
           const m = JSON.parse(r.manifest_json) as PinManifestV1;
-          const sealedSec = Math.floor(new Date(r.sealed_at).getTime() / 1000);
+          const sealedSec = r.chain_created_at ?? 0;
           const coSigned = (live.coSignedMap[r.record_id.toLowerCase()] || 0) > 0;
-          const inWindow =
-            live.lease && live.lease.fundedAt > 0
-              ? sealedSec <= live.lease.fundedAt + live.lease.reviewWindow
-              : true;
           return {
             id: r.record_id,
             position: m.position,
+            normal: m.normal,
             sealedAt: sealedSec,
             coSigned,
             text: m.text,
-            countsAsMoveIn: Boolean(coSigned || inWindow),
+            countsAsMoveIn: countsAsMoveInPin({
+              pinAuthor: r.author,
+              pinCreatedAt: r.chain_created_at,
+              coSignedByLandlord: coSigned,
+              lease: live.lease,
+              moveInCreatedAt,
+            }),
           };
         } catch {
           return null;
         }
       })
       .filter((x): x is MoveInPinRef => x !== null);
-  }, [live.records, live.coSignedMap, live.lease]);
+  }, [live.records, live.coSignedMap, live.lease, moveInCreatedAt]);
 
-  // Map onchain claims (source of truth: KeyprintEscrow.getClaims) to keyprint.claim.v1 manifests
+  // The sealed alignment for this lease's move-in/move-out pair (maps move-out → move-in).
+  const sealedAlignment = useMemo(
+    () => findSealedAlignment(live.records, live.lease),
+    [live.records, live.lease],
+  );
+
+  // Map onchain claims (source of truth: KeyprintEscrow.getClaims) to keyprint.claim.v1 manifests.
+  // A claim is a priced pin only if its evidence was sealed by the landlord for this lease and
+  // states the same amount the contract holds.
   const claimCards = useMemo(() => {
     return live.claims.map((c) => {
       const rec = live.records.find(
         (r) => r.record_id.toLowerCase() === c.evidenceRecordId.toLowerCase(),
       );
       let manifest: ClaimManifestV1 | null = null;
-      if (rec) {
+      if (
+        rec &&
+        live.lease &&
+        rec.kind === RecordKind.ClaimEvidence &&
+        rec.author.toLowerCase() === live.lease.landlord.toLowerCase()
+      ) {
         try {
           const parsed = JSON.parse(rec.manifest_json) as ClaimManifestV1;
           if (
             parsed.type === "keyprint.claim.v1" &&
+            parsed.leaseId.toLowerCase() === leaseId.toLowerCase() &&
             Array.isArray(parsed.position) &&
             parsed.amount === c.amount.toString()
           ) {
@@ -151,13 +207,21 @@ export default function LeaseClaimsPage({
         matchedMoveInPin,
       };
     });
-  }, [live.claims, live.records, moveInPins]);
+  }, [live.claims, live.records, live.lease, leaseId, moveInPins]);
 
-  const canFileMore =
-    Boolean(isLandlord) &&
+  const claimWindowOpen =
     live.lease?.state === 2 &&
     !live.lease.claimsClosed &&
     live.chainNowSec <= live.lease.endedAt + live.lease.claimWindow;
+
+  // Claims are only filed against the lined-up scans, so every pin shares move-in coordinates.
+  const canFileMore = Boolean(isLandlord) && claimWindowOpen && Boolean(sealedAlignment);
+
+  // Demo shortcuts only make sense on the bundled placeholder model.
+  const usesPlaceholderModel = Boolean(
+    live.meta?.move_in_scan_path?.startsWith("/models/") ||
+      live.meta?.move_out_scan_path?.startsWith("/models/"),
+  );
 
   const handleStageClaim = () => {
     if (!pendingTap || !claimTitle.trim() || Number(claimDollars) < 1) return;
@@ -182,11 +246,15 @@ export default function LeaseClaimsPage({
     const escrow = getEscrowAddress();
     if (!escrow) return;
 
+    if (!sealedAlignment) {
+      setError("The move-in and move-out scans aren't lined up and sealed yet, so claims can't be filed.");
+      return;
+    }
+
     setError(null);
     setBusy("Preparing priced-pin evidence…");
     try {
-      const alignmentRecordId =
-        (live.meta?.alignment_record_id as Hex | null) || ZERO_BYTES32;
+      const alignmentRecordId = sealedAlignment.recordId;
       const prepared: Array<{
         canonicalJson: string;
         contentHash: Hex;
@@ -242,30 +310,21 @@ export default function LeaseClaimsPage({
       };
 
       setBusy("Confirm with one touch to file priced claims & close window…");
-      const op = await sendSponsoredCalls(session, [
-        ...sealCalls,
-        ...fileCalls,
-        closeCall,
-      ]);
+      const op = await sendSponsoredCalls(
+        session,
+        [...sealCalls, ...fileCalls, closeCall],
+        { onSubmitted: () => setBusy("Filing on Arc…") },
+      );
 
-      await Promise.all([
-        ...prepared.map((p, i) =>
-          fetch("/api/records", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              record_id: recordIds[i],
-              unit_id: live.lease!.unitId,
-              lease_id: leaseId,
-              kind: RecordKind.ClaimEvidence,
-              content_hash: p.contentHash,
-              author: session.address,
-              manifest_json: p.canonicalJson,
-              tx_hash: op.txHash,
-              block_number: Number(op.blockNumber),
-              gas_cost_wei: i === 0 ? op.actualGasCost.toString() : "0",
-            }),
-          }),
+      const [failed] = await Promise.all([
+        saveRecordManifests(
+          prepared.map((p, i) => ({
+            record_id: recordIds[i],
+            lease_id: leaseId,
+            manifest_json: p.canonicalJson,
+            tx_hash: op.txHash,
+            gas_cost_wei: i === 0 ? op.actualGasCost.toString() : "0",
+          })),
         ),
         fetch(`/api/leases/${encodeURIComponent(leaseId)}`, {
           method: "PATCH",
@@ -274,13 +333,18 @@ export default function LeaseClaimsPage({
             add_gas_cost_wei: op.actualGasCost.toString(),
             add_tx_count: 1,
           }),
-        }),
-      ]).catch(() => null);
+        }).catch(() => null),
+      ]);
+      if (failed > 0) {
+        setError(
+          "Claims are filed on Arc, but their pin details haven't reached Keyprint's index yet. This page will retry next time it opens.",
+        );
+      }
 
       setDraftClaims([]);
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not file claims.");
+      setError(friendlyError(err, "Could not file claims. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -314,7 +378,7 @@ export default function LeaseClaimsPage({
       }).catch(() => null);
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not dispute claim.");
+      setError(friendlyError(err, "Could not dispute this claim. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -348,7 +412,7 @@ export default function LeaseClaimsPage({
       }).catch(() => null);
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not withdraw claim.");
+      setError(friendlyError(err, "Could not withdraw this claim. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -395,7 +459,7 @@ export default function LeaseClaimsPage({
       }).catch(() => null);
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not approve claim.");
+      setError(friendlyError(err, "Could not approve this claim. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -429,7 +493,8 @@ export default function LeaseClaimsPage({
       }).catch(() => null);
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Lease is not ready to settle yet.");
+      setError(friendlyError(err, "The lease isn't ready to settle yet."));
+      await live.refresh().catch(() => undefined);
     } finally {
       setBusy(null);
     }
@@ -506,6 +571,43 @@ export default function LeaseClaimsPage({
       ? live.lease.endedAt + live.lease.claimWindow
       : null;
 
+  // Once claims are closed, settlement waits for the last answer/ruling deadline.
+  // Show that clock too, so the keeper is asked to settle right when silence rules kick in.
+  const lastAnswerDeadline = useMemo(() => {
+    const lease = live.lease;
+    if (!lease || lease.state !== 2 || !claimsClosedOrExpired) return null;
+    let latest = 0;
+    let anyOpen = false;
+    for (const c of live.claims) {
+      if (c.state === 0) {
+        anyOpen = true;
+        latest = Math.max(latest, c.filedAt + lease.responseWindow);
+      } else if (c.state === 2) {
+        anyOpen = true;
+        latest = Math.max(latest, c.disputedAt + lease.resolveWindow);
+      }
+    }
+    return anyOpen && latest > live.chainNowSec - 1 ? latest : null;
+  }, [live.lease, live.claims, live.chainNowSec, claimsClosedOrExpired]);
+
+  // Show the move-out scan lined up into move-in coordinates when the alignment is sealed,
+  // so taps and move-in pins share one frame. Otherwise show the move-in scan itself.
+  const moveOutScanUrl = live.signedUrls.moveOutScan || null;
+  const moveInScanUrl = live.signedUrls.moveInScan || null;
+  const viewerUrl =
+    moveOutScanUrl && sealedAlignment ? moveOutScanUrl : moveInScanUrl ?? null;
+  const viewerMatrix =
+    viewerUrl && viewerUrl === moveOutScanUrl && sealedAlignment ? sealedAlignment.matrix : null;
+
+  const depositText = live.lease ? formatDollars(live.lease.deposit) : "the deposit";
+  const claimCountdownActive = isLandlord
+    ? `You have until zero to file priced claims. If you file nothing, the full ${depositText} goes back to your renter.`
+    : `Your landlord has until zero to file priced claims. If nothing is filed, your full ${depositText} comes back.`;
+  const claimCountdownExpired =
+    live.claims.length === 0
+      ? `Claim deadline passed with no claims. The full ${depositText} is on its way back to the renter.`
+      : "Claim deadline passed. Settlement runs once every claim is final.";
+
   return (
     <LeaseShell leaseId={leaseId} live={live}>
       <div className="space-y-6">
@@ -537,39 +639,68 @@ export default function LeaseClaimsPage({
             deadlineSec={claimWindowDeadline}
             chainNowSec={live.chainNowSec}
             leaseId={leaseId}
-            activeMessage={`Your landlord has until zero to file priced claims. If nothing is filed, your full ${formatDollars(live.lease.deposit)} comes back.`}
-            expiredMessage={`Claim deadline passed. Releasing your ${formatDollars(live.lease.deposit)} refund.`}
-            onManualRelease={session ? handleSettleNow : undefined}
+            activeMessage={claimCountdownActive}
+            expiredMessage={claimCountdownExpired}
+            onManualRelease={isRenter || isLandlord ? handleSettleNow : undefined}
+            manualReleaseLabel={isRenter ? "Release my deposit" : "Settle now"}
             releasing={busy !== null}
-            onKeeperSettled={() => live.refresh()}
+            onKeeperSettled={() => void live.refresh()}
+          />
+        )}
+
+        {!claimWindowDeadline && lastAnswerDeadline && live.lease && (
+          <Countdown
+            deadlineSec={lastAnswerDeadline}
+            chainNowSec={live.chainNowSec}
+            leaseId={leaseId}
+            activeMessage="Waiting for answers. Any claim left unanswered counts as accepted, and any dispute the reviewer leaves unresolved goes back to the renter."
+            expiredMessage="Every answer deadline has passed. Settlement can run now."
+            onManualRelease={isRenter || isLandlord ? handleSettleNow : undefined}
+            manualReleaseLabel="Settle now"
+            releasing={busy !== null}
+            onKeeperSettled={() => void live.refresh()}
           />
         )}
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-4">
-            <RoomViewer
-              url={live.signedUrls.moveOutScan || live.signedUrls.moveInScan || REFERENCE_MOVE_IN_URL}
-              pins={viewerPins}
-              flyTo={flyTo}
-              onSurfaceTap={canFileMore ? (tap) => setPendingTap(tap) : undefined}
-              onPinSelect={(pin) =>
-                setFlyTo({
-                  position: pin.position,
-                  normal: pin.normal,
-                  nonce: Date.now(),
-                })
-              }
-              heightClassName="h-[520px]"
-              hint={
-                canFileMore
-                  ? "Landlord: tap a spot in the 3D room to drop a priced claim pin"
-                  : "Every dollar claimed is pinned to its spot beside move-in pins"
-              }
-            />
+            {viewerUrl ? (
+              <RoomViewer
+                url={viewerUrl}
+                modelMatrix={viewerMatrix}
+                pins={viewerPins}
+                flyTo={flyTo}
+                onSurfaceTap={canFileMore ? (tap) => setPendingTap(tap) : undefined}
+                onPinSelect={(pin) =>
+                  setFlyTo({
+                    position: pin.position,
+                    normal: pin.normal,
+                    nonce: Date.now(),
+                  })
+                }
+                heightClassName="h-[55vh] max-h-[520px] min-h-[320px]"
+                hint={
+                  canFileMore
+                    ? "Landlord: tap a spot in the 3D room to drop a priced claim pin"
+                    : "Every dollar claimed is pinned to its spot beside move-in pins"
+                }
+              />
+            ) : (
+              <div className="rounded-2xl border border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+                The 3D record for this lease isn&apos;t available yet.
+              </div>
+            )}
 
-            {canFileMore && (
+            {isLandlord && claimWindowOpen && !sealedAlignment && (
+              <div className="rounded-xl border border-suggestion/30 bg-suggestion/10 px-4 py-2.5 text-xs text-foreground">
+                The move-in and move-out scans haven&apos;t been lined up and sealed for this lease yet, so claims
+                can&apos;t be pinned. Line them up on the Compare screen first.
+              </div>
+            )}
+
+            {canFileMore && usesPlaceholderModel && (
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-muted-foreground">Quick pin spots:</span>
+                <span className="text-muted-foreground">Demo shortcuts (sample model):</span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -658,9 +789,10 @@ export default function LeaseClaimsPage({
                         onClick={() =>
                           setDraftClaims((prev) => prev.filter((x) => x.id !== d.id))
                         }
-                        className="text-muted-foreground hover:text-claim cursor-pointer"
+                        aria-label={`Remove staged claim: ${d.title}`}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:text-claim cursor-pointer"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                   ))}
@@ -752,7 +884,10 @@ export default function LeaseClaimsPage({
                             <div className="rounded-lg border border-claim/30 bg-claim/10 px-3 py-2 text-xs text-claim flex items-start gap-2">
                               <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
                               <span>
-                                <strong>Not a priced pin:</strong> filed without matching 3D pin evidence. You can dispute this claim.
+                                <strong>Not a priced pin:</strong> filed without matching 3D pin evidence.
+                                {isRenter && live.lease?.state === 2 && claim.state === 0
+                                  ? " You can dispute this claim."
+                                  : ""}
                               </span>
                             </div>
                           )}

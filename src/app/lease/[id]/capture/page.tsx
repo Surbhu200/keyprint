@@ -33,6 +33,8 @@ import {
 } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
+  friendlyError,
+  sealTimeIso,
   sendSponsoredCalls,
 } from "@/lib/chain/wallet";
 import { sha256Blob } from "@/lib/evidence/hash";
@@ -41,6 +43,7 @@ import {
   type EvidenceManifestV1,
   type PinManifestV1,
 } from "@/lib/evidence/manifest";
+import { saveRecordManifests } from "@/lib/evidence/record-store";
 import { REFERENCE_MOVE_IN_URL, REFERENCE_SPOTS } from "@/lib/sample/reference";
 import { uploadToPrivateStorage } from "@/lib/supabase/upload";
 import { cn } from "@/lib/utils";
@@ -54,9 +57,10 @@ interface DraftPin {
 }
 
 function formatDuration(seconds: number): string {
-  if (seconds >= 86400) return `${Math.round(seconds / 86400)} days`;
-  if (seconds >= 3600) return `${Math.round(seconds / 3600)} hours`;
-  return `${Math.round(seconds / 60)} minutes`;
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (seconds >= 86400) return unit(Math.round(seconds / 86400), "day");
+  if (seconds >= 3600) return unit(Math.round(seconds / 3600), "hour");
+  return unit(Math.max(1, Math.round(seconds / 60)), "minute");
 }
 
 export default function LeaseCapturePage({
@@ -78,6 +82,7 @@ export default function LeaseCapturePage({
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [sealedInfo, setSealedInfo] = useState<{
     recordId: string;
     txHash: string;
@@ -118,6 +123,7 @@ export default function LeaseCapturePage({
     }
 
     setError(null);
+    setNotice(null);
     setBusy("Hashing move-in 3D scan…");
     try {
       const scanBlob: Blob =
@@ -126,19 +132,21 @@ export default function LeaseCapturePage({
         setBusy(`Hashing move-in scan… ${pct}%`),
       );
 
-      let scanPath = scanUrl;
-      try {
+      // The bundled placeholder model is already public: point at it instead of re-uploading
+      // ~16 MB for every lease. Imported scans go to this lease's private folder.
+      let scanPath = REFERENCE_MOVE_IN_URL;
+      if (scanFile) {
         setBusy("Uploading scan privately…");
-        const up = await uploadToPrivateStorage({
-          file: scanBlob,
-          filename: scanName,
-          contentType: "model/gltf-binary",
-          scope: `leases/${leaseId}`,
-        });
-        scanPath = up.path;
-      } catch {
-        if (scanFile) {
-          throw new Error("Could not upload custom .glb to private storage.");
+        try {
+          const up = await uploadToPrivateStorage({
+            file: scanBlob,
+            filename: scanName,
+            contentType: "model/gltf-binary",
+            scope: `leases/${leaseId}`,
+          });
+          scanPath = up.path;
+        } catch {
+          throw new Error("Could not upload your scan to private storage. Nothing was sealed.");
         }
       }
 
@@ -244,49 +252,34 @@ export default function LeaseCapturePage({
       };
 
       setBusy("Confirm with one touch to seal & protect deposit…");
-      const op = await sendSponsoredCalls(session, [
-        ...scanCalls,
-        ...pinCalls,
-        approveCall,
-        fundCall,
-      ]);
+      const op = await sendSponsoredCalls(
+        session,
+        [...scanCalls, ...pinCalls, approveCall, fundCall],
+        { onSubmitted: () => setBusy("Sealing on Arc…") },
+      );
 
-      // Save manifests and metadata cache
-      await fetch("/api/records", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // Save the exact manifest bytes (local backup + retries; see record-store).
+      const failedSaves = await saveRecordManifests([
+        {
           record_id: moveInRecordId,
-          unit_id: unitId,
           lease_id: leaseId,
-          kind: RecordKind.MoveInScan,
-          content_hash: scanCanon.contentHash,
-          author: session.address,
           manifest_json: scanCanon.canonicalJson,
-          file_paths: [scanPath],
+          file_paths: scanPath.startsWith("leases/") ? [scanPath] : [],
           tx_hash: op.txHash,
-          block_number: Number(op.blockNumber),
           gas_cost_wei: op.actualGasCost.toString(),
-        }),
-      }).catch(() => null);
-
-      for (let i = 0; i < pinPrepared.length; i++) {
-        await fetch("/api/records", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            record_id: pinRecordIds[i],
-            unit_id: unitId,
-            lease_id: leaseId,
-            kind: RecordKind.Pin,
-            content_hash: pinPrepared[i].contentHash,
-            author: session.address,
-            manifest_json: pinPrepared[i].canonicalJson,
-            file_paths: pinPrepared[i].photoPath ? [pinPrepared[i].photoPath] : [],
-            tx_hash: op.txHash,
-            block_number: Number(op.blockNumber),
-          }),
-        }).catch(() => null);
+        },
+        ...pinPrepared.map((p, i) => ({
+          record_id: pinRecordIds[i],
+          lease_id: leaseId,
+          manifest_json: p.canonicalJson,
+          file_paths: p.photoPath ? [p.photoPath] : [],
+          tx_hash: op.txHash,
+        })),
+      ]);
+      if (failedSaves > 0) {
+        setNotice(
+          "Sealed on Arc. Some details haven't reached Keyprint's index yet; this page retries them the next time it opens.",
+        );
       }
 
       await fetch(`/api/leases/${encodeURIComponent(leaseId)}`, {
@@ -304,11 +297,11 @@ export default function LeaseCapturePage({
       setSealedInfo({
         recordId: moveInRecordId,
         txHash: op.txHash,
-        sealedAt: new Date().toISOString(),
+        sealedAt: await sealTimeIso(op.blockNumber),
       });
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Seal & pay failed.");
+      setError(friendlyError(err, "Seal & pay didn't go through. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -347,10 +340,19 @@ export default function LeaseCapturePage({
                 : "Move-in sealed"
             }
             subtitle="Your landlord can now co-sign or contest specific pins during the review window."
-            sealedAtIso={sealedInfo?.sealedAt}
+            sealedAtIso={
+              sealedInfo?.sealedAt ??
+              (live.lease
+                ? live.records.find(
+                    (r) =>
+                      r.record_id.toLowerCase() === live.lease!.moveInRecordId.toLowerCase(),
+                  )?.sealed_at
+                : null)
+            }
             recordId={sealedInfo?.recordId || live.lease?.moveInRecordId}
           />
         )}
+        {notice && <p className="text-xs text-muted-foreground">{notice}</p>}
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-4">
@@ -358,7 +360,7 @@ export default function LeaseCapturePage({
               url={live.signedUrls.moveInScan || scanUrl}
               pins={viewerPins}
               onSurfaceTap={alreadyFunded ? undefined : (tap) => setPendingTap(tap)}
-              heightClassName="h-[480px]"
+              heightClassName="h-[55vh] max-h-[520px] min-h-[320px]"
               hint={
                 alreadyFunded
                   ? "Move-in scan is sealed"
@@ -370,19 +372,22 @@ export default function LeaseCapturePage({
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>Loaded: {scanName}</span>
                 <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setPendingTap({
-                        point: REFERENCE_SPOTS.deskScratch.position,
-                        normal: REFERENCE_SPOTS.deskScratch.normal,
-                      })
-                    }
-                  >
-                    Pin desk scratch
-                  </Button>
+                  {!scanFile && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      title="Demo shortcut for the bundled sample model"
+                      onClick={() =>
+                        setPendingTap({
+                          point: REFERENCE_SPOTS.deskScratch.position,
+                          normal: REFERENCE_SPOTS.deskScratch.normal,
+                        })
+                      }
+                    >
+                      Demo: pin desk scratch
+                    </Button>
+                  )}
                   <label className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 font-medium text-foreground cursor-pointer hover:bg-muted">
                     <Upload className="h-3.5 w-3.5" />
                     Import custom .glb
@@ -456,7 +461,7 @@ export default function LeaseCapturePage({
                     Deposit Terms
                   </CardTitle>
                   <CardDescription>
-                    Paying means you accept these deadlines and reviewer. Not even Keyprint can move this deposit outside these rules.
+                    Paying means you accept these deadlines and the reviewer below. Not even Keyprint can move this deposit outside these rules.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2.5 text-sm">
@@ -464,6 +469,24 @@ export default function LeaseCapturePage({
                     <span className="text-muted-foreground">Protected deposit</span>
                     <span className="font-semibold">
                       {formatDollars(live.lease.deposit)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Lease ends</span>
+                    <span className="font-medium text-right">
+                      {new Date(live.lease.leaseEnd * 1000).toLocaleString(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Dispute reviewer</span>
+                    <span
+                      className="font-medium text-right"
+                      title="The account that rules on disputed claims. It can't be you or your landlord."
+                    >
+                      Account …{live.lease.reviewer.slice(-4)}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -521,15 +544,20 @@ export default function LeaseCapturePage({
                           onClick={() =>
                             setPins((prev) => prev.filter((x) => x.id !== p.id))
                           }
-                          className="text-muted-foreground hover:text-claim cursor-pointer"
+                          aria-label={`Remove pin: ${p.text}`}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:text-claim cursor-pointer"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     ))
                   )}
 
-                  {error && <p className="text-xs text-claim">{error}</p>}
+                  {error && (
+                    <p className="text-xs text-claim" role="alert">
+                      {error}
+                    </p>
+                  )}
 
                   {!isRenter && live.lease ? (
                     <p className="text-xs text-muted-foreground">

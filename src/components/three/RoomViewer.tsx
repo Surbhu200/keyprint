@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { CameraControls, useGLTF, useProgress } from "@react-three/drei";
@@ -25,6 +25,12 @@ interface ModelSceneProps {
     nonce: number;
   } | null;
   resetNonce?: number;
+  /**
+   * Optional 4x4 column-major matrix applied to the whole model, e.g. the sealed alignment
+   * ("maps move-out coordinates to move-in coordinates"). With it, a move-out scan is shown
+   * in move-in coordinates, so taps and pins share one frame.
+   */
+  modelMatrix?: number[] | null;
 }
 
 function LoadedRoom({
@@ -35,11 +41,28 @@ function LoadedRoom({
   onModelLoaded,
   flyTo,
   resetNonce,
+  modelMatrix,
 }: ModelSceneProps) {
   const { scene } = useGLTF(url);
   // Clone so two side-by-side viewers never mutate each other's scene graph,
   // while keeping world coordinates strictly identical to the file's coordinates.
   const cloned = useMemo(() => scene.clone(true), [scene]);
+  const groupRef = useRef<THREE.Group | null>(null);
+  const matrixKey = modelMatrix && modelMatrix.length === 16 ? modelMatrix.join(",") : "";
+
+  useLayoutEffect(() => {
+    const g = groupRef.current;
+    if (!g) return;
+    g.matrixAutoUpdate = false;
+    if (matrixKey) {
+      g.matrix.fromArray(matrixKey.split(",").map(Number));
+    } else {
+      g.matrix.identity();
+    }
+    g.matrixWorldNeedsUpdate = true;
+    g.updateMatrixWorld(true);
+  }, [matrixKey]);
+
   const controlsRef = useRef<CameraControlsImpl | null>(null);
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const fittedRef = useRef<string | null>(null);
@@ -62,15 +85,16 @@ function LoadedRoom({
   };
 
   useEffect(() => {
-    cloned.updateMatrixWorld(true);
+    groupRef.current?.updateMatrixWorld(true);
     onModelLoaded?.(cloned);
 
-    if (controlsRef.current && fittedRef.current !== url) {
+    const fitKey = `${url}|${matrixKey}`;
+    if (controlsRef.current && fittedRef.current !== fitKey) {
       frameInterior(false);
-      fittedRef.current = url;
+      fittedRef.current = fitKey;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloned, url, onModelLoaded]);
+  }, [cloned, url, matrixKey, onModelLoaded]);
 
   useEffect(() => {
     if (resetNonce && resetNonce > 0) {
@@ -110,6 +134,8 @@ function LoadedRoom({
     const n = e.face
       ? e.face.normal.clone().transformDirection(e.object.matrixWorld).normalize()
       : new THREE.Vector3(0, 1, 0);
+    // Scans are double-sided: make the stored normal face the camera that tapped it.
+    if (n.dot(e.ray.direction) > 0) n.negate();
 
     onSurfaceTap({
       point: [p.x, p.y, p.z],
@@ -124,11 +150,13 @@ function LoadedRoom({
       <ambientLight intensity={0.65} />
       <directionalLight position={[4, 7, 5]} intensity={1.1} />
       <directionalLight position={[-4, 4, -3]} intensity={0.45} />
-      <primitive
-        object={cloned}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-      />
+      <group ref={groupRef}>
+        <primitive
+          object={cloned}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+        />
+      </group>
       {pins.map((pin) => (
         <PinMarker key={pin.id} pin={pin} onSelect={onPinSelect} />
       ))}
@@ -167,6 +195,8 @@ export interface RoomViewerProps {
   } | null;
   heightClassName?: string;
   hint?: string;
+  /** See ModelSceneProps.modelMatrix. */
+  modelMatrix?: number[] | null;
 }
 
 export function RoomViewer({
@@ -178,6 +208,7 @@ export function RoomViewer({
   flyTo,
   heightClassName = "h-[460px]",
   hint,
+  modelMatrix,
 }: RoomViewerProps) {
   const [resetNonce, setResetNonce] = useState(0);
 
@@ -216,6 +247,7 @@ export function RoomViewer({
             onModelLoaded={onModelLoaded}
             flyTo={flyTo}
             resetNonce={resetNonce}
+            modelMatrix={modelMatrix}
           />
         </Suspense>
       </Canvas>

@@ -14,10 +14,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RecordKind } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
+  friendlyError,
   sendSponsoredCalls,
 } from "@/lib/chain/wallet";
 import { canonicalizeAndHash, type PinManifestV1 } from "@/lib/evidence/manifest";
-import { REFERENCE_MOVE_IN_URL } from "@/lib/sample/reference";
+import { countsAsMoveInPin } from "@/lib/evidence/pin-rules";
+import { saveRecordManifest } from "@/lib/evidence/record-store";
 
 export default function LeaseRoomPage({
   params,
@@ -37,19 +39,34 @@ export default function LeaseRoomPage({
     nonce: number;
   } | null>(null);
 
+  const isParty =
+    Boolean(session && live.lease) &&
+    [live.lease!.renter.toLowerCase(), live.lease!.landlord.toLowerCase()].includes(
+      session!.address.toLowerCase(),
+    );
+
+  const moveInCreatedAt = useMemo(() => {
+    if (!live.lease) return null;
+    const row = live.records.find(
+      (r) => r.record_id.toLowerCase() === live.lease!.moveInRecordId.toLowerCase(),
+    );
+    return row?.chain_created_at ?? null;
+  }, [live.records, live.lease]);
+
   const sealedPins = useMemo(() => {
     return live.records
       .filter((r) => r.kind === RecordKind.Pin)
       .map((r) => {
         try {
           const m = JSON.parse(r.manifest_json) as PinManifestV1;
-          const sealedSec = Math.floor(new Date(r.sealed_at).getTime() / 1000);
           const coSignedTs = live.coSignedMap[r.record_id.toLowerCase()] || 0;
-          const inReviewWindow =
-            live.lease && live.lease.fundedAt > 0
-              ? sealedSec <= live.lease.fundedAt + live.lease.reviewWindow
-              : true;
-          const countsAsMoveIn = Boolean(coSignedTs > 0 || inReviewWindow);
+          const countsAsMoveIn = countsAsMoveInPin({
+            pinAuthor: r.author,
+            pinCreatedAt: r.chain_created_at,
+            coSignedByLandlord: coSignedTs > 0,
+            lease: live.lease,
+            moveInCreatedAt,
+          });
           const isLandlordPin =
             live.lease &&
             r.author.toLowerCase() === live.lease.landlord.toLowerCase();
@@ -65,7 +82,7 @@ export default function LeaseRoomPage({
         }
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-  }, [live.records, live.coSignedMap, live.lease]);
+  }, [live.records, live.coSignedMap, live.lease, moveInCreatedAt]);
 
   const viewerPins: SpatialPinItem[] = [
     ...sealedPins.map((p) => ({
@@ -117,28 +134,25 @@ export default function LeaseRoomPage({
           contentHash: canon.contentHash,
         },
       ]);
-      const op = await sendSponsoredCalls(session, calls);
-      await fetch("/api/records", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          record_id: recordIds[0],
-          unit_id: live.lease.unitId,
-          lease_id: leaseId,
-          kind: RecordKind.Pin,
-          content_hash: canon.contentHash,
-          author: session.address,
-          manifest_json: canon.canonicalJson,
-          tx_hash: op.txHash,
-          block_number: Number(op.blockNumber),
-          gas_cost_wei: op.actualGasCost.toString(),
-        }),
+      // An identical pin that's already sealed (a retry) needs no new transaction.
+      const op = calls.length > 0 ? await sendSponsoredCalls(session, calls) : null;
+      const saved = await saveRecordManifest({
+        record_id: recordIds[0],
+        lease_id: leaseId,
+        manifest_json: canon.canonicalJson,
+        tx_hash: op?.txHash ?? null,
+        gas_cost_wei: op ? op.actualGasCost.toString() : "0",
       });
+      if (!saved.ok) {
+        setError(
+          "Pin sealed on Arc, but its details haven't reached Keyprint's index yet. This page will retry next time it opens.",
+        );
+      }
       setPendingTap(null);
       setPinText("");
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not seal pin.");
+      setError(friendlyError(err, "Could not seal this pin. Nothing was sent."));
     } finally {
       setBusy(false);
     }
@@ -148,21 +162,31 @@ export default function LeaseRoomPage({
     <LeaseShell leaseId={leaseId} live={live}>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <RoomViewer
-            url={live.signedUrls.moveInScan || REFERENCE_MOVE_IN_URL}
-            pins={viewerPins}
-            flyTo={flyTo}
-            onSurfaceTap={session ? (tap) => setPendingTap(tap) : undefined}
-            onPinSelect={(pin) =>
-              setFlyTo({
-                position: pin.position,
-                normal: pin.normal,
-                nonce: Date.now(),
-              })
-            }
-            heightClassName="h-[520px]"
-            hint="Tap any spot in the room to leave a timestamped pin"
-          />
+          {live.signedUrls.moveInScan ? (
+            <RoomViewer
+              url={live.signedUrls.moveInScan}
+              pins={viewerPins}
+              flyTo={flyTo}
+              onSurfaceTap={isParty ? (tap) => setPendingTap(tap) : undefined}
+              onPinSelect={(pin) =>
+                setFlyTo({
+                  position: pin.position,
+                  normal: pin.normal,
+                  nonce: Date.now(),
+                })
+              }
+              heightClassName="h-[55vh] max-h-[520px] min-h-[320px]"
+              hint={
+                isParty
+                  ? "Tap any spot in the room to leave a timestamped pin"
+                  : "Sign in as the renter or landlord to add pins"
+              }
+            />
+          ) : (
+            <div className="rounded-2xl border border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+              The move-in scan for this lease isn&apos;t available yet.
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -213,7 +237,9 @@ export default function LeaseRoomPage({
             <CardContent className="space-y-2.5">
               {sealedPins.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  No pins yet. Tap anything that&apos;s already damaged.
+                  {isParty
+                    ? "No pins yet. Tap anything that's already damaged."
+                    : "No pins sealed yet."}
                 </p>
               ) : (
                 sealedPins.map((p) => {

@@ -8,6 +8,9 @@ import {
   MAX_UPLOAD_BYTES,
 } from "@/lib/supabase/server";
 
+/** Folders the app actually uploads to; anything else is refused. */
+const ALLOWED_SCOPE = /^(leases\/0x[0-9a-f]{64}(\/(pins|renders))?|solo|solo-photos|lab)$/;
+
 function sanitizeFilename(name: string): string {
   const base = name.split(/[\\/]/).pop() || "file.bin";
   return base.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
@@ -40,7 +43,11 @@ export async function POST(req: NextRequest) {
     const filename = sanitizeFilename(body.filename || "scan.glb");
     const contentType = (body.contentType || "application/octet-stream").toLowerCase();
     const bytes = Number(body.bytes ?? 0);
-    const scope = (body.scope || "uploads").replace(/[^a-zA-Z0-9/_-]/g, "").slice(0, 80);
+    // A lease folder alone is 73 characters ("leases/" + 66-char id), so allow room for a subfolder.
+    const scope = (body.scope || "uploads").replace(/[^a-zA-Z0-9/_-]/g, "").slice(0, 120).toLowerCase();
+    if (!ALLOWED_SCOPE.test(scope)) {
+      return NextResponse.json({ error: "Unsupported upload folder." }, { status: 400 });
+    }
 
     if (!Number.isFinite(bytes) || bytes <= 0 || bytes > MAX_UPLOAD_BYTES) {
       return NextResponse.json(
@@ -65,12 +72,9 @@ export async function POST(req: NextRequest) {
       .createSignedUploadUrl(objectPath);
 
     if (error || !data) {
+      console.error("createSignedUploadUrl failed", error);
       return NextResponse.json(
-        {
-          error:
-            error?.message ||
-            `Failed to create signed upload URL for bucket "${DEFAULT_STORAGE_BUCKET}". Run supabase/schema.sql first.`,
-        },
+        { error: "Private storage isn't available right now. Try again in a moment." },
         { status: 500 },
       );
     }
@@ -82,10 +86,8 @@ export async function POST(req: NextRequest) {
       signedUrl: data.signedUrl,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Invalid upload request." },
-      { status: 400 },
-    );
+    console.error("POST /api/upload-url failed", err);
+    return NextResponse.json({ error: "Invalid upload request." }, { status: 400 });
   }
 }
 
@@ -105,6 +107,11 @@ export async function GET(req: NextRequest) {
   if (!objectPath || objectPath.includes("..")) {
     return NextResponse.json({ error: "Valid storage path required." }, { status: 400 });
   }
+  // Only files inside the app's own upload folders can be signed for reading.
+  const folder = objectPath.split("/").slice(0, -1).join("/").toLowerCase();
+  if (!ALLOWED_SCOPE.test(folder)) {
+    return NextResponse.json({ error: "Valid storage path required." }, { status: 400 });
+  }
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.storage
@@ -112,10 +119,7 @@ export async function GET(req: NextRequest) {
     .createSignedUrl(objectPath, 3600);
 
   if (error || !data) {
-    return NextResponse.json(
-      { error: error?.message || "Failed to create signed download URL." },
-      { status: 404 },
-    );
+    return NextResponse.json({ error: "File not found." }, { status: 404 });
   }
 
   return NextResponse.json({ path: objectPath, signedUrl: data.signedUrl });

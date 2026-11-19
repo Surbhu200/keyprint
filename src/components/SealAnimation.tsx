@@ -6,9 +6,24 @@ import { Check, Fingerprint, ShieldCheck } from "lucide-react";
 
 interface SealAnimationProps {
   title?: string;
-  sealedAtIso?: string;
+  /** Arc time of the seal (or co-sign). Without it no time is shown: never this device's clock. */
+  sealedAtIso?: string | null;
   recordId?: string;
   subtitle?: string;
+  /** Word before the time, e.g. "Sealed" or "Co-signed". */
+  verb?: string;
+}
+
+function formatSealTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export function SealAnimation({
@@ -16,20 +31,9 @@ export function SealAnimation({
   sealedAtIso,
   recordId,
   subtitle,
+  verb = "Sealed",
 }: SealAnimationProps) {
-  const formattedTime = sealedAtIso
-    ? new Date(sealedAtIso).toLocaleString("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      })
-    : new Date().toLocaleString("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
+  const formattedTime = formatSealTime(sealedAtIso);
 
   return (
     <motion.div
@@ -77,9 +81,7 @@ export function SealAnimation({
         <div>
           <div className="flex items-center gap-1.5 font-semibold text-sealed">
             <Check className="h-4 w-4" />
-            <span>
-              Sealed · {formattedTime}
-            </span>
+            <span>{formattedTime ? `${verb} · ${formattedTime}` : `${verb} on Arc`}</span>
           </div>
           <p className="text-sm font-medium text-foreground mt-0.5">{title}</p>
           {subtitle && (

@@ -22,7 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { explorerTxUrl, getRegistryAddress } from "@/lib/chain/arc";
+import { createArcPublicClient, explorerTxUrl, getRegistryAddress } from "@/lib/chain/arc";
 import { sha256Blob } from "@/lib/evidence/hash";
 import {
   verifyFileAgainstArc,
@@ -38,6 +38,30 @@ interface StoredRecordLookup {
   manifest_json: string;
   tx_hash: string | null;
   block_number: number | null;
+}
+
+/**
+ * Returns the tx hash and block number only if that transaction's receipt really contains
+ * KeyprintRegistry's RecordSealed log for this record id (topic 1). Otherwise returns null,
+ * so a wrong link from the index is never shown next to a green result.
+ */
+async function confirmSealTx(
+  recordId: string,
+  txHash: string | null,
+): Promise<{ txHash: string | null; blockNumber: number | null } | null> {
+  const registry = getRegistryAddress();
+  if (!txHash || !registry || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return null;
+  try {
+    const receipt = await createArcPublicClient().getTransactionReceipt({ hash: txHash as Hex });
+    const sealed = receipt.logs.some(
+      (log) =>
+        log.address.toLowerCase() === registry.toLowerCase() &&
+        (log.topics[1] ?? "").toLowerCase() === recordId.toLowerCase(),
+    );
+    return sealed ? { txHash, blockNumber: Number(receipt.blockNumber) } : null;
+  } catch {
+    return null;
+  }
 }
 
 function VerifyContent() {
@@ -64,7 +88,7 @@ function VerifyContent() {
   useEffect(() => {
     if (!initialRecordId) return;
     fetch(`/api/records?recordId=${encodeURIComponent(initialRecordId)}`)
-      .then((r) => r.json())
+      .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error("index unavailable"))))
       .then((data: { record?: StoredRecordLookup | null }) => {
         if (data.record) {
           setManifestJsonInput(data.record.manifest_json);
@@ -74,7 +98,11 @@ function VerifyContent() {
           });
         }
       })
-      .catch(() => null);
+      .catch(() =>
+        setError(
+          "Couldn't load this record's manifest from Keyprint's index. You can still load it from an evidence bundle below.",
+        ),
+      );
   }, [initialRecordId]);
 
   const runVerifyFile = async (file: Blob, fileName: string) => {
@@ -84,25 +112,46 @@ function VerifyContent() {
     setHashProgress(0);
 
     try {
-      let rid = manualManifestOverride ? recordIdInput.trim() : "";
-      let mJson = manualManifestOverride ? manifestJsonInput.trim() : "";
-      let lookupTx = manualManifestOverride ? txMeta : null;
+      const rid = manualManifestOverride ? recordIdInput.trim() : "";
+      const mJson = manualManifestOverride ? manifestJsonInput.trim() : "";
 
-      // Always resolve by the dropped file's local SHA-256 unless user loaded a specific manifest
-      if (!rid || !mJson) {
+      // A specific manifest was loaded (record link or evidence bundle): check exactly that one.
+      let candidates: StoredRecordLookup[] =
+        rid && mJson ? [{ record_id: rid, manifest_json: mJson, tx_hash: null, block_number: null }] : [];
+
+      if (candidates.length === 0) {
+        // Otherwise find every sealed record whose manifest lists this file's fingerprint.
         const localSha = await sha256Blob(file, (pct) => setHashProgress(pct));
-        const res = await fetch(
-          rid
-            ? `/api/records?recordId=${encodeURIComponent(rid)}`
-            : `/api/records?fileSha256=${encodeURIComponent(localSha)}`,
-        );
-        const data = (await res.json()) as {
+        let data: {
           record?: StoredRecordLookup | null;
           records?: StoredRecordLookup[];
-        };
-        const found = data.record || data.records?.[0] || null;
+          error?: string;
+          configured?: boolean;
+        } | null = null;
+        let ok = false;
+        try {
+          const res = await fetch(
+            rid
+              ? `/api/records?recordId=${encodeURIComponent(rid)}`
+              : `/api/records?fileSha256=${encodeURIComponent(localSha)}`,
+          );
+          ok = res.ok;
+          data = await res.json().catch(() => null);
+        } catch {
+          ok = false;
+        }
 
-        if (!found) {
+        // An index that can't be reached says nothing about the file: never show red for it.
+        if (!ok || !data || data.error || data.configured === false) {
+          setHashProgress(null);
+          setError(
+            "Couldn't reach Keyprint's record index, so nothing was checked. If you have the evidence bundle, load its manifest below and try again.",
+          );
+          return;
+        }
+
+        candidates = data.record ? [data.record] : (data.records ?? []);
+        if (candidates.length === 0) {
           setHashProgress(null);
           setTxMeta(null);
           setResult({
@@ -112,29 +161,48 @@ function VerifyContent() {
           });
           return;
         }
-        rid = found.record_id;
-        mJson = found.manifest_json;
-        lookupTx = { txHash: found.tx_hash, blockNumber: found.block_number };
-        setRecordIdInput(rid);
-        setManifestJsonInput(mJson);
-        setTxMeta(lookupTx);
       }
 
-      if (!/^0x[0-9a-fA-F]{64}$/.test(rid)) {
+      // Every candidate is checked against Arc in this browser; the first that passes wins.
+      let best: VerificationResult | null = null;
+      let bestCandidate: StoredRecordLookup | null = null;
+      for (const c of candidates) {
+        if (!/^0x[0-9a-fA-F]{64}$/.test(c.record_id)) continue;
+        const v = await verifyFileAgainstArc({
+          file,
+          manifestJson: c.manifest_json,
+          recordId: c.record_id as Hex,
+          onHashProgress: (pct) => setHashProgress(pct),
+        });
+        if (!best || v.valid) {
+          best = v;
+          bestCandidate = c;
+        }
+        if (v.valid) break;
+      }
+      setHashProgress(null);
+      if (!best || !bestCandidate) {
         throw new Error("Record ID must be a valid 32-byte 0x hex string.");
       }
 
-      const verified = await verifyFileAgainstArc({
-        file,
-        manifestJson: mJson,
-        recordId: rid as Hex,
-        onHashProgress: (pct) => setHashProgress(pct),
-      });
-      setHashProgress(null);
-      setResult(verified);
+      setRecordIdInput(bestCandidate.record_id);
+      setManifestJsonInput(bestCandidate.manifest_json);
+      // Show a block and explorer link only if that transaction really sealed this record.
+      setTxMeta(
+        best.valid
+          ? await confirmSealTx(bestCandidate.record_id, bestCandidate.tx_hash ?? txMeta?.txHash ?? null)
+          : null,
+      );
+      setResult(best);
     } catch (err) {
       setHashProgress(null);
-      setError(err instanceof Error ? err.message : "Verification failed.");
+      setError(
+        err instanceof Error && /fetch|network|http/i.test(err.message)
+          ? "Couldn't reach Arc right now, so nothing was checked. Try again in a moment."
+          : err instanceof Error
+            ? err.message
+            : "Verification failed.",
+      );
     }
   };
 

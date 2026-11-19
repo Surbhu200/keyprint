@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -37,7 +37,7 @@ import {
   LeaseStateLabel,
   stringToBytes32,
 } from "@/lib/chain/arc";
-import { readUsdcBalance, sendSponsoredCalls } from "@/lib/chain/wallet";
+import { friendlyError, readUsdcBalance, sendSponsoredCalls } from "@/lib/chain/wallet";
 import { DEFAULT_DEMO_REVIEWER } from "@/lib/sample/reference";
 import { cn } from "@/lib/utils";
 import type { OnchainLease, StoredLeaseMeta } from "@/components/useLeaseLiveState";
@@ -66,7 +66,13 @@ export default function HomePage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [releasingId, setReleasingId] = useState<string | null>(null);
+  const [releaseError, setReleaseError] = useState<{ leaseId: string; message: string } | null>(null);
+  const [lastCreated, setLastCreated] = useState<{ leaseId: Hex; indexed: boolean } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [availableBalance, setAvailableBalance] = useState<bigint | null>(null);
+  // One list request at a time, and never show one account's list after switching accounts.
+  const loadInFlight = useRef(false);
+  const loadAddr = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!session?.address) return;
@@ -83,12 +89,25 @@ export default function HomePage() {
     };
   }, [session?.address, leases.length]);
 
-  const loadLeases = useCallback(async (addr?: Address) => {
+  const loadLeases = useCallback(async (addr?: Address, force = false) => {
+    loadAddr.current = addr?.toLowerCase();
+    if (!addr) {
+      // The list is per account; signed out there is nothing to show.
+      setLeases([]);
+      setLoading(false);
+      return;
+    }
+    if (loadInFlight.current && !force) return;
+    loadInFlight.current = true;
+    const stillCurrent = () => loadAddr.current === addr.toLowerCase();
     try {
-      const qs = addr ? `?address=${encodeURIComponent(addr)}` : "";
-      const res = await fetch(`/api/leases${qs}`, { cache: "no-store" });
+      const res = await fetch(`/api/leases?address=${encodeURIComponent(addr)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("lease list unavailable");
       const data = (await res.json()) as { leases?: StoredLeaseMeta[] };
       const rows = data.leases ?? [];
+      if (!stillCurrent()) return;
 
       const escrow = getEscrowAddress();
       if (!escrow || rows.length === 0) {
@@ -112,6 +131,7 @@ export default function HomePage() {
         ),
       ]);
 
+      if (!stillCurrent()) return;
       setChainNowSec(Number(block.timestamp));
       setLeases(
         rows.map((meta, i) => {
@@ -147,6 +167,7 @@ export default function HomePage() {
     } catch {
       // Keep last good view on transient network error
     } finally {
+      loadInFlight.current = false;
       setLoading(false);
     }
   }, []);
@@ -182,30 +203,58 @@ export default function HomePage() {
       setCreateError("Escrow contract address is not configured yet.");
       return;
     }
-    if (!/^0x[0-9a-fA-F]{40}$/.test(renterAddr.trim())) {
+    const renter = renterAddr.trim();
+    const reviewer = reviewerAddr.trim();
+    const me = session.address.toLowerCase();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(renter)) {
       setCreateError("Enter the renter's account ID from their Details drawer.");
       return;
     }
-    if (!/^0x[0-9a-fA-F]{40}$/.test(reviewerAddr.trim())) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(reviewer)) {
       setCreateError("Enter an independent reviewer account ID.");
+      return;
+    }
+    if (renter.toLowerCase() === me) {
+      setCreateError("The renter has to be a different account than yours.");
+      return;
+    }
+    if (reviewer.toLowerCase() === me || reviewer.toLowerCase() === renter.toLowerCase()) {
+      setCreateError("The reviewer can't be you or the renter.");
+      return;
+    }
+    const depositNum = Number(depositDollars);
+    const windowNum = Number(windowMinutes);
+    const endOffsetNum = Number(leaseEndOffsetMin);
+    if (!Number.isFinite(depositNum) || depositNum <= 0) {
+      setCreateError("Enter a deposit above $0.");
+      return;
+    }
+    if (!Number.isFinite(windowNum) || windowNum < 1) {
+      setCreateError("Each window has to be at least 1 minute.");
+      return;
+    }
+    if (!Number.isFinite(endOffsetNum) || endOffsetNum < 0) {
+      setCreateError("The lease end can't be in the past.");
       return;
     }
 
     setCreating(true);
+    setLastCreated(null);
     try {
       const unitId = stringToBytes32(`${unitName}-${Date.now()}`);
-      const deposit = parseUnits(depositDollars || "200", 6);
-      const winSec = BigInt(Math.max(60, Math.round(Number(windowMinutes) * 60)));
-      const nowSec = Math.floor(Date.now() / 1000);
-      const leaseEnd = BigInt(nowSec + Math.round(Number(leaseEndOffsetMin) * 60));
+      const deposit = parseUnits(String(depositNum), 6);
+      const winSec = BigInt(Math.max(60, Math.round(windowNum * 60)));
+      // Deadlines are judged by Arc's clock, so start from the latest block, not this device.
+      const latest = await createArcPublicClient().getBlock({ blockTag: "latest" });
+      const leaseEnd = latest.timestamp + BigInt(Math.round(endOffsetNum * 60));
 
       const data = encodeFunctionData({
         abi: KEYPRINT_ESCROW_ABI,
         functionName: "createLease",
         args: [
           {
-            renter: renterAddr.trim() as Address,
-            reviewer: reviewerAddr.trim() as Address,
+            renter: renter as Address,
+            reviewer: reviewer as Address,
             deposit,
             unitId,
             leaseEnd,
@@ -244,24 +293,23 @@ export default function HomePage() {
         throw new Error("Lease was submitted, but LeaseCreated log was not found.");
       }
 
-      await fetch("/api/leases", {
+      // Parties and unit are read from Arc by the server; the body only names the lease.
+      const indexRes = await fetch("/api/leases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           lease_id: createdLeaseId,
-          unit_id: unitId,
           unit_name: unitName.trim() || "Apartment",
-          landlord_address: session.address,
-          renter_address: renterAddr.trim(),
-          reviewer_address: reviewerAddr.trim(),
           created_tx_hash: op.txHash,
         }),
-      });
+      }).catch(() => null);
 
       setShowCreate(false);
-      await loadLeases(session.address);
+      setLinkCopied(false);
+      setLastCreated({ leaseId: createdLeaseId, indexed: Boolean(indexRes?.ok) });
+      await loadLeases(session.address, true);
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Could not create lease.");
+      setCreateError(friendlyError(err, "The lease wasn't created. Nothing was sent."));
     } finally {
       setCreating(false);
     }
@@ -272,6 +320,7 @@ export default function HomePage() {
     const escrow = getEscrowAddress();
     if (!escrow) return;
     setReleasingId(leaseId);
+    setReleaseError(null);
     try {
       const data = encodeFunctionData({
         abi: KEYPRINT_ESCROW_ABI,
@@ -287,12 +336,21 @@ export default function HomePage() {
           add_gas_cost_wei: op.actualGasCost.toString(),
           add_tx_count: 1,
         }),
+      }).catch(() => null);
+      await loadLeases(session.address, true);
+    } catch (err) {
+      setReleaseError({
+        leaseId,
+        message: friendlyError(err, "The deposit wasn't released yet. Try again in a moment."),
       });
-      await loadLeases(session.address);
     } finally {
       setReleasingId(null);
     }
   };
+
+  const shareLink = lastCreated
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/lease/${lastCreated.leaseId}/capture`
+    : "";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -378,20 +436,20 @@ export default function HomePage() {
                       setLeaseEndOffsetMin("0");
                     }}
                   >
-                    Preset: Demo Lease A ($200 / 10m)
+                    Demo A: full flow ($200 · 10-min windows)
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      setUnitName("Lease B · Apt 404 (Auto-refund)");
+                      setUnitName("Lease B · Apt 404 (no-claim refund)");
                       setDepositDollars("100");
                       setWindowMinutes("1");
                       setLeaseEndOffsetMin("0");
                     }}
                   >
-                    Preset: Demo Lease B ($100 / 1m)
+                    Demo B: no-claim refund ($100 · 1-min windows)
                   </Button>
                 </div>
               </div>
@@ -433,7 +491,7 @@ export default function HomePage() {
                     />
                   </label>
                   <label className="space-y-1 text-xs font-medium block">
-                    <span>Independent reviewer account ID</span>
+                    <span>Dispute reviewer account ID (prefilled with the demo reviewer)</span>
                     <input
                       type="text"
                       required
@@ -455,7 +513,7 @@ export default function HomePage() {
                     />
                   </label>
                   <label className="space-y-1 text-xs font-medium block">
-                    <span>Lease end offset from now (minutes; 0 = ready for move-out)</span>
+                    <span>Lease ends in (minutes from now; 0 = move-out allowed right away)</span>
                     <input
                       type="number"
                       min="0"
@@ -488,6 +546,46 @@ export default function HomePage() {
           </Card>
         )}
 
+        {lastCreated && (
+          <Card className="border-sealed/25">
+            <CardContent className="p-5 space-y-2.5 text-sm">
+              <p className="font-medium">Lease created on Arc.</p>
+              <p className="text-muted-foreground">
+                Send this link to your renter. They&apos;ll see every term before paying the deposit.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="flex-1 min-w-0 truncate rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs">
+                  {shareLink}
+                </code>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void navigator.clipboard
+                      ?.writeText(shareLink)
+                      .then(() => setLinkCopied(true))
+                      .catch(() => setLinkCopied(false));
+                  }}
+                >
+                  {linkCopied ? "Copied" : "Copy link"}
+                </Button>
+                <Link
+                  href={`/lease/${lastCreated.leaseId}/capture`}
+                  className={cn(buttonVariants({ size: "sm" }))}
+                >
+                  Open lease
+                </Link>
+              </div>
+              {!lastCreated.indexed && (
+                <p className="text-xs text-muted-foreground">
+                  It may take a moment to show up in your list below. The link works now.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Leases list */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
@@ -500,7 +598,27 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {loading ? (
+          {!session ? (
+            <Card>
+              <CardContent className="p-8 text-center space-y-3">
+                <p className="text-sm font-medium">Sign in to see your apartments.</p>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  Your leases and sealed scans are listed by your passkey account.
+                </p>
+                <div className="flex justify-center gap-2 pt-1">
+                  <Link href="/start" className={cn(buttonVariants({ size: "sm" }))}>
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/sample"
+                    className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}
+                  >
+                    See a sample apartment
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          ) : loading ? (
             <Card>
               <CardContent className="p-8 text-center text-sm text-muted-foreground">
                 Loading apartments…
@@ -514,7 +632,7 @@ export default function HomePage() {
                 </div>
                 <p className="text-sm font-medium">No leases yet.</p>
                 <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                  Seal a solo apartment scan right now with no landlord needed, or explore the sample apartment.
+                  Seal a solo apartment scan with no landlord needed, or look around the sample apartment.
                 </p>
                 <div className="flex justify-center gap-2 pt-1">
                   <Link href="/unit/new" className={cn(buttonVariants({ size: "sm" }))}>
@@ -553,10 +671,16 @@ export default function HomePage() {
                         ? `/lease/${meta.lease_id}/claims`
                         : `/lease/${meta.lease_id}/settle`;
 
+                // The "nothing filed, money comes back" clock only applies while no claims are open.
                 const claimDeadline =
-                  onchain && state === 2 && !onchain.claimsClosed
+                  onchain &&
+                  state === 2 &&
+                  !onchain.claimsClosed &&
+                  onchain.activeClaimedTotal === 0n
                     ? onchain.endedAt + onchain.claimWindow
                     : null;
+                const hasOpenClaims =
+                  onchain !== null && state === 2 && onchain.activeClaimedTotal > 0n;
 
                 return (
                   <Card key={meta.lease_id}>
@@ -607,21 +731,50 @@ export default function HomePage() {
                           deadlineSec={claimDeadline}
                           chainNowSec={chainNowSec}
                           leaseId={meta.lease_id}
-                          activeMessage={`Your landlord has until the clock hits zero to file claims. If nothing is filed, your ${formatDollars(onchain.deposit)} comes back.`}
-                          expiredMessage={`Claim deadline passed. Releasing your full ${formatDollars(onchain.deposit)} refund now.`}
-                          onManualRelease={() =>
-                            handleManualRelease(meta.lease_id as Hex)
+                          activeMessage={
+                            role === "Landlord"
+                              ? `You have until the clock hits zero to file claims. If you file none, the full ${formatDollars(onchain.deposit)} goes back to your renter.`
+                              : role === "Renter"
+                                ? `Your landlord has until the clock hits zero to file claims. If nothing is filed, your ${formatDollars(onchain.deposit)} comes back.`
+                                : `The landlord has until the clock hits zero to file claims. If nothing is filed, the ${formatDollars(onchain.deposit)} goes back to the renter.`
                           }
+                          expiredMessage={
+                            role === "Renter"
+                              ? `No claims were filed in time. Your full ${formatDollars(onchain.deposit)} can come back now.`
+                              : `No claims were filed in time. The full ${formatDollars(onchain.deposit)} can go back to the renter now.`
+                          }
+                          onManualRelease={
+                            session ? () => handleManualRelease(meta.lease_id as Hex) : undefined
+                          }
+                          manualReleaseLabel={role === "Renter" ? "Release my deposit" : "Release the deposit"}
                           releasing={releasingId === meta.lease_id}
-                          onKeeperSettled={() => loadLeases(session?.address)}
+                          onKeeperSettled={() => loadLeases(session?.address, true)}
                         />
+                      )}
+
+                      {hasOpenClaims && onchain && (
+                        <div className="rounded-xl border border-claim/25 bg-claim/5 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2">
+                          <span>
+                            {formatDollars(onchain.activeClaimedTotal)} in claims filed. The deposit settles once each claim is answered or its deadline passes.
+                          </span>
+                          <Link
+                            href={`/lease/${meta.lease_id}/claims`}
+                            className="text-xs font-medium text-accent hover:underline"
+                          >
+                            See claims
+                          </Link>
+                        </div>
+                      )}
+
+                      {releaseError?.leaseId === meta.lease_id && (
+                        <p className="text-xs text-claim">{releaseError.message}</p>
                       )}
 
                       {state === 3 && onchain && onchain.landlordPayout === 0n && (
                         <div className="rounded-xl border border-sealed/25 bg-sealed/5 px-4 py-3 text-sm text-sealed flex items-center gap-2 font-medium">
                           <Clock className="h-4 w-4" />
                           <span>
-                            {formatDollars(onchain.renterPayout)} returned automatically when the landlord filed no claims by the deadline.
+                            {formatDollars(onchain.renterPayout)} went back to the renter. Nothing was deducted.
                           </span>
                         </div>
                       )}

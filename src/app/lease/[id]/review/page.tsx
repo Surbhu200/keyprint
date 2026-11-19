@@ -23,10 +23,10 @@ import {
   KEYPRINT_REGISTRY_ABI,
   RecordKind,
 } from "@/lib/chain/arc";
-import { sendSponsoredCalls } from "@/lib/chain/wallet";
+import { friendlyError, sendSponsoredCalls } from "@/lib/chain/wallet";
 import { sha256HexToBytes32, sha256Text } from "@/lib/evidence/hash";
 import type { PinManifestV1 } from "@/lib/evidence/manifest";
-import { REFERENCE_MOVE_IN_URL } from "@/lib/sample/reference";
+import { countsAsMoveInPin } from "@/lib/evidence/pin-rules";
 
 export default function LeaseReviewPage({
   params,
@@ -51,15 +51,26 @@ export default function LeaseReviewPage({
     live.lease &&
     session.address.toLowerCase() === live.lease.landlord.toLowerCase();
 
-  const moveInRecords = useMemo(() => {
-    return live.records.filter(
-      (r) => r.kind === RecordKind.MoveInScan || r.kind === RecordKind.Pin,
+  // Onchain seal time of the lease's move-in record (records here are verified against Arc).
+  const moveInCreatedAt = useMemo(() => {
+    if (!live.lease) return null;
+    const row = live.records.find(
+      (r) => r.record_id.toLowerCase() === live.lease!.moveInRecordId.toLowerCase(),
     );
-  }, [live.records]);
+    return row?.chain_created_at ?? null;
+  }, [live.records, live.lease]);
 
+  // Renter pins only. A pin can be co-signed as move-in evidence only if it was sealed in the
+  // review window after move-in; later pins are shown for context but never co-signed here.
   const pinItems = useMemo(() => {
+    const lease = live.lease;
     return live.records
-      .filter((r) => r.kind === RecordKind.Pin)
+      .filter(
+        (r) =>
+          r.kind === RecordKind.Pin &&
+          lease &&
+          r.author.toLowerCase() === lease.renter.toLowerCase(),
+      )
       .map((r) => {
         try {
           const m = JSON.parse(r.manifest_json) as PinManifestV1;
@@ -68,28 +79,37 @@ export default function LeaseReviewPage({
             manifest: m,
             coSigned: (live.coSignedMap[r.record_id.toLowerCase()] || 0) > 0,
             sealedAt: r.sealed_at,
+            inMoveInWindow: countsAsMoveInPin({
+              pinAuthor: r.author,
+              pinCreatedAt: r.chain_created_at,
+              coSignedByLandlord: false,
+              lease,
+              moveInCreatedAt,
+            }),
           };
         } catch {
           return null;
         }
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-  }, [live.records, live.coSignedMap]);
+  }, [live.records, live.coSignedMap, live.lease, moveInCreatedAt]);
 
+  // Exactly what "Co-sign" will sign: the lease's move-in record plus renter pins from the
+  // move-in window that aren't co-signed yet. Every id here is a verified, existing record.
   const unacknowledgedIds = useMemo(() => {
     const ids = new Set<string>();
+    const moveInId = live.lease?.moveInRecordId?.toLowerCase();
     if (
-      live.lease?.moveInRecordId &&
-      live.lease.moveInRecordId !==
-        "0x0000000000000000000000000000000000000000000000000000000000000000"
+      moveInId &&
+      moveInId !== "0x0000000000000000000000000000000000000000000000000000000000000000"
     ) {
-      ids.add(live.lease.moveInRecordId.toLowerCase());
+      ids.add(moveInId);
     }
-    for (const r of moveInRecords) {
-      ids.add(r.record_id.toLowerCase());
+    for (const p of pinItems) {
+      if (p.inMoveInWindow) ids.add(p.recordId.toLowerCase());
     }
     return Array.from(ids).filter((id) => !(live.coSignedMap[id] > 0));
-  }, [live.lease, moveInRecords, live.coSignedMap]);
+  }, [live.lease, pinItems, live.coSignedMap]);
 
   const allCoSigned =
     Boolean(live.lease?.moveInRecordId) &&
@@ -130,7 +150,7 @@ export default function LeaseReviewPage({
 
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Co-sign failed.");
+      setError(friendlyError(err, "Co-sign didn't go through. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -154,7 +174,7 @@ export default function LeaseReviewPage({
       setContestNote("");
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not contest pin.");
+      setError(friendlyError(err, "Could not contest this pin. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -173,28 +193,43 @@ export default function LeaseReviewPage({
       <div className="space-y-6">
         {allCoSigned && (
           <SealAnimation
+            verb="Co-signed"
             title="Move-in record co-signed by the landlord"
             subtitle="Both sides now share the exact same agreed move-in baseline."
+            sealedAtIso={
+              live.lease &&
+              (live.coSignedMap[live.lease.moveInRecordId.toLowerCase()] || 0) > 0
+                ? new Date(
+                    live.coSignedMap[live.lease.moveInRecordId.toLowerCase()] * 1000,
+                  ).toISOString()
+                : null
+            }
             recordId={live.lease?.moveInRecordId}
           />
         )}
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <RoomViewer
-              url={live.signedUrls.moveInScan || REFERENCE_MOVE_IN_URL}
-              pins={viewerPins}
-              flyTo={flyTo}
-              onPinSelect={(pin) =>
-                setFlyTo({
-                  position: pin.position,
-                  normal: pin.normal,
-                  nonce: Date.now(),
-                })
-              }
-              heightClassName="h-[500px]"
-              hint="Click any renter pin to inspect it in 3D"
-            />
+            {live.signedUrls.moveInScan ? (
+              <RoomViewer
+                url={live.signedUrls.moveInScan}
+                pins={viewerPins}
+                flyTo={flyTo}
+                onPinSelect={(pin) =>
+                  setFlyTo({
+                    position: pin.position,
+                    normal: pin.normal,
+                    nonce: Date.now(),
+                  })
+                }
+                heightClassName="h-[55vh] max-h-[500px] min-h-[320px]"
+                hint="Click any renter pin to inspect it in 3D"
+              />
+            ) : (
+              <div className="rounded-2xl border border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+                The renter&apos;s move-in scan isn&apos;t available yet.
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -264,11 +299,15 @@ export default function LeaseReviewPage({
                             {p.manifest.text}
                           </button>
                           <Badge variant={p.coSigned ? "sealed" : "default"}>
-                            {p.coSigned ? "Co-signed" : "Pending"}
+                            {p.coSigned
+                              ? "Co-signed"
+                              : p.inMoveInWindow
+                                ? "Pending"
+                                : "Pinned after move-in"}
                           </Badge>
                         </div>
 
-                        {isLandlord && !p.coSigned && (
+                        {isLandlord && !p.coSigned && p.inMoveInWindow && (
                           <div>
                             {contestingId === p.recordId ? (
                               <div className="space-y-2 pt-1">

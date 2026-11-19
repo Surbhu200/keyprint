@@ -1,7 +1,9 @@
 "use client";
 
 import * as THREE from "three";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import {
   boxCenterToNdc,
   type BoundingBoxPx,
@@ -30,11 +32,35 @@ const WIDTH = 1024;
 const HEIGHT = 768;
 const FOV = 50;
 
+let dracoLoader: DRACOLoader | null = null;
+
+/**
+ * Loads a GLB with the same decoders the on-screen viewers get from drei's useGLTF, so scans
+ * run through `gltf-transform optimize` (meshopt by default) or Draco-compressed exports work here too.
+ */
 function loadGlb(url: string): Promise<THREE.Group> {
   return new Promise((resolve, reject) => {
     const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    if (!dracoLoader) {
+      dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.5/");
+    }
+    loader.setDRACOLoader(dracoLoader);
     loader.load(url, (gltf) => resolve(gltf.scene), undefined, reject);
   });
+}
+
+/** Distance from `origin` along `dir` to the first surface of `root`, or Infinity. */
+function firstHitDistance(
+  root: THREE.Object3D,
+  origin: THREE.Vector3,
+  dir: THREE.Vector3,
+  far = 50,
+): number {
+  const rc = new THREE.Raycaster(origin, dir.clone().normalize(), 0.01, far);
+  const hits = rc.intersectObject(root, true);
+  return hits.length > 0 ? hits[0].distance : Infinity;
 }
 
 function buildCamera(pos: [number, number, number], lookAt: [number, number, number]) {
@@ -60,11 +86,17 @@ export function buildDefaultViewpoints(
   }>,
 ): ViewpointSpec[] {
   const views: ViewpointSpec[] = [];
+  moveInRoot.updateMatrixWorld(true);
 
   for (const pin of moveInPins.slice(0, 6)) {
     const [nx, ny, nz] = pin.normal ?? [0, 0.35, 1];
     const dir = new THREE.Vector3(nx, ny, nz).normalize();
-    const camPos = new THREE.Vector3(...pin.position).addScaledVector(dir, 1.2);
+    const pinPos = new THREE.Vector3(...pin.position);
+    // 1.2 m out along the sealed normal, pulled in so the camera never ends up behind a wall.
+    const start = pinPos.clone().addScaledVector(dir, 0.02);
+    const clearance = firstHitDistance(moveInRoot, start, dir, 1.2);
+    const distance = Math.max(0.35, Math.min(1.2, clearance - 0.15));
+    const camPos = pinPos.clone().addScaledVector(dir, distance);
     if (Math.abs(dir.y) > 0.85) {
       camPos.z += 0.65;
       camPos.y += 0.25;
@@ -79,28 +111,32 @@ export function buildDefaultViewpoints(
   const box = new THREE.Box3().setFromObject(moveInRoot);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
+  // Heights are measured from the scan's floor, not from y = 0: phone scans often put the
+  // origin where the scan started, so the floor can sit anywhere.
+  const floorY = box.min.y;
+  const eye = (h: number) => floorY + Math.min(h, size.y * 0.85);
 
-  // Coverage views pointing at key surfaces (carpet/floor, back wall, left wall, desk)
+  // Coverage views pointing at key surfaces (floor, back wall, left wall, a corner)
   const coverage: ViewpointSpec[] = [
     {
       viewId: "overview-floor-rug",
-      cameraPos: [center.x + size.x * 0.25, Math.min(2.1, size.y * 0.72), center.z + size.z * 0.45],
-      lookAt: [center.x + 0.2, 0.1, center.z + 0.2],
+      cameraPos: [center.x + size.x * 0.25, eye(2.1), center.z + size.z * 0.45],
+      lookAt: [center.x + 0.2, floorY + 0.1, center.z + 0.2],
     },
     {
       viewId: "overview-left-wall",
-      cameraPos: [center.x + size.x * 0.35, 1.25, center.z + size.z * 0.25],
-      lookAt: [box.min.x + 0.05, 0.75, center.z + 0.15],
+      cameraPos: [center.x + size.x * 0.35, eye(1.25), center.z + size.z * 0.25],
+      lookAt: [box.min.x + 0.05, floorY + 0.75, center.z + 0.15],
     },
     {
       viewId: "overview-back-wall",
-      cameraPos: [center.x, 1.35, center.z + size.z * 0.42],
-      lookAt: [center.x, 1.1, box.min.z + 0.05],
+      cameraPos: [center.x, eye(1.35), center.z + size.z * 0.42],
+      lookAt: [center.x, floorY + 1.1, box.min.z + 0.05],
     },
     {
       viewId: "overview-desk-corner",
-      cameraPos: [center.x - size.x * 0.1, 1.45, center.z + size.z * 0.15],
-      lookAt: [box.min.x + size.x * 0.3, 0.78, box.min.z + size.z * 0.18],
+      cameraPos: [center.x - size.x * 0.1, eye(1.45), center.z + size.z * 0.15],
+      lookAt: [box.min.x + size.x * 0.3, floorY + 0.78, box.min.z + size.z * 0.18],
     },
   ];
 
@@ -110,21 +146,33 @@ export function buildDefaultViewpoints(
   return views.slice(0, 12);
 }
 
-/** Projects 3D move-in pins into 1024x768 pixel coordinates (origin top-left, y down). */
+/**
+ * Projects 3D move-in pins into 1024x768 pixel coordinates (origin top-left, y down).
+ * Pins hidden behind a surface of the move-in scan are left out, so a pin on the far side of a
+ * wall can never be "visible" in a view, or match damage that merely projects onto it.
+ */
 function projectPinsTo2D(
   cam: THREE.PerspectiveCamera,
   pins: MoveInPinRef[],
+  moveInRoot: THREE.Object3D,
 ): ProjectedPin2D[] {
   const projected: ProjectedPin2D[] = [];
   const v = new THREE.Vector3();
+  const camPos = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
   for (const p of pins) {
     if (!p.countsAsMoveIn) continue;
     v.set(p.position[0], p.position[1], p.position[2]).project(cam);
-    if (v.z >= -1 && v.z <= 1 && v.x >= -1 && v.x <= 1 && v.y >= -1 && v.y <= 1) {
-      const x = ((v.x + 1) / 2) * WIDTH;
-      const y = ((1 - v.y) / 2) * HEIGHT;
-      projected.push({ id: p.id, x: Math.round(x), y: Math.round(y) });
-    }
+    if (!(v.z >= -1 && v.z <= 1 && v.x >= -1 && v.x <= 1 && v.y >= -1 && v.y <= 1)) continue;
+
+    const pinPos = new THREE.Vector3(p.position[0], p.position[1], p.position[2]);
+    const toPin = pinPos.clone().sub(camPos);
+    const dist = toPin.length();
+    const hit = firstHitDistance(moveInRoot, camPos, toPin, dist + 0.05);
+    if (hit < dist - 0.05) continue; // occluded
+
+    const x = ((v.x + 1) / 2) * WIDTH;
+    const y = ((1 - v.y) / 2) * HEIGHT;
+    projected.push({ id: p.id, x: Math.round(x), y: Math.round(y) });
   }
   return projected;
 }
@@ -163,7 +211,12 @@ export async function renderBeforeAfterPairs(params: {
   renderer.setPixelRatio(1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  const target = new THREE.WebGLRenderTarget(WIDTH, HEIGHT);
+  // Render straight into an sRGB target so the GPU encodes on write and the read-back bytes are
+  // display-ready. A plain (linear) target would hand the model images 2-5x too dark in the shadows.
+  const target = new THREE.WebGLRenderTarget(WIDTH, HEIGHT, {
+    colorSpace: THREE.SRGBColorSpace,
+    samples: 4,
+  });
   const pixelBuf = new Uint8Array(WIDTH * HEIGHT * 4);
 
   const canvas2d = document.createElement("canvas");
@@ -235,7 +288,7 @@ export async function renderBeforeAfterPairs(params: {
       afterBlob: after.blob,
       beforeDataUrl: before.dataUrl,
       afterDataUrl: after.dataUrl,
-      pins: projectPinsTo2D(cam, params.moveInPins),
+      pins: projectPinsTo2D(cam, params.moveInPins, moveInRoot),
       cameraPos: vp.cameraPos,
       lookAt: vp.lookAt,
     });
@@ -243,6 +296,9 @@ export async function renderBeforeAfterPairs(params: {
 
   target.dispose();
   renderer.dispose();
+  // Free the WebGL context now; browsers drop the oldest context after ~16, which would
+  // blank one of the visible 3D views after repeated AI runs.
+  renderer.forceContextLoss();
 
   // Keep alignedMoveOut ready for raycasting Claude's returned bounding boxes directly
   // in move-in coordinates (never apply the inverse transform!).

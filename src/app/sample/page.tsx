@@ -81,13 +81,13 @@ export default function SampleApartmentPage() {
           <div className="space-y-1.5">
             <Badge variant="sealed">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Read-only sample apartment · Reference 3D walkthrough
+              Illustrative sample · not a live lease
             </Badge>
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-              Apt 302 · $200 deposit settled fairly without court
+              Sample: how a $200 deposit gets settled without court
             </h1>
             <p className="text-sm text-muted-foreground max-w-2xl">
-              Drag the slider across the room to compare move-in and move-out on the exact same wall. Tap any pin or card below to fly the camera right to that spot.
+              Drag the slider across the room to compare move-in and move-out on the exact same wall. Tap any pin or card below to fly the camera to that spot. The scan is a public research scan of a real apartment (Meta&apos;s Replica dataset); the move-out copy has a staged stain, and the claims below are an example.
             </p>
           </div>
 
@@ -109,7 +109,7 @@ export default function SampleApartmentPage() {
               href={`/lease/${REFERENCE_VERIFIED_LEASE_ID}/settle`}
               className={cn(buttonVariants({ variant: "outline" }))}
             >
-              Live Arc receipt ($0.032 fee)
+              Real $2 test lease on Arc (scripted)
             </Link>
           </div>
         </div>
@@ -119,7 +119,7 @@ export default function SampleApartmentPage() {
           moveInUrl={REFERENCE_MOVE_IN_URL}
           moveOutUrl={REFERENCE_MOVE_OUT_URL}
           alignmentMatrix={REFERENCE_ALIGNMENT.matrix4ColumnMajor}
-          moveInLabel="Move-in Nov 19"
+          moveInLabel="Move-in"
           moveOutLabel="Move-out"
           pins={SAMPLE_PINS}
           flyTo={flyTo}
@@ -141,7 +141,7 @@ export default function SampleApartmentPage() {
                 Every dollar claimed pinned to the 3D record
               </CardTitle>
               <CardDescription>
-                Two landlord claims filed against a $200 deposit—one fair, one disproved by the landlord&apos;s own move-in co-signature.
+                Example: two landlord claims against a $200 deposit. One is fair; the other is disproved by the landlord&apos;s own move-in co-sign.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -243,7 +243,7 @@ export default function SampleApartmentPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-sealed" />
-                  Final settlement split
+                  Example settlement split
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -299,7 +299,7 @@ export default function SampleApartmentPage() {
                     "w-full mt-1",
                   )}
                 >
-                  Verify live sealed scan
+                  Verify the sealed sample scan
                 </Link>
               </CardContent>
             </Card>

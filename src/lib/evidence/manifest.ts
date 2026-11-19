@@ -75,6 +75,8 @@ export interface ReportManifestV1 {
   moveOutRecordId: Hex;
   promptVersion: string;
   viewIds: string[];
+  /** Where the suggestions came from: "live" model run, "cache" of an earlier run, or "manual". */
+  source?: string;
   changes: Array<{
     view_id: string;
     box: { x: number; y: number; w: number; h: number };
@@ -84,6 +86,10 @@ export interface ReportManifestV1 {
     confidence: "low" | "medium" | "high";
     worldPosition?: [number, number, number];
     matchedMoveInPinId?: string | null;
+    /** Who produced this item: the AI, or a person who added it by hand. */
+    origin?: "ai" | "manual";
+    /** What the people reviewing it decided. Dismissed items stay in the sealed record. */
+    reviewState?: "pending" | "confirmed" | "dismissed";
   }>;
 }
 
@@ -276,8 +282,19 @@ export async function verifyFileAgainstArc(params: {
   let coSignedByLandlord = false;
   let coSignedAt = 0;
 
-  const escrow = getEscrowAddress();
-  if (!isSolo && escrow) {
+  if (!isSolo) {
+    // A lease record is only valid if its lease exists in KeyprintEscrow and its author is a
+    // party to that lease. A made-up lease id can't be used to dress up a stranger's seal.
+    const escrow = getEscrowAddress();
+    if (!escrow) {
+      return {
+        valid: false,
+        reason: "The escrow address isn't configured, so this lease record can't be checked.",
+        fileSha256,
+        manifestHash,
+        recordId: params.recordId,
+      };
+    }
     const lease = await client.readContract({
       address: escrow,
       abi: KEYPRINT_ESCROW_ABI,
@@ -285,21 +302,31 @@ export async function verifyFileAgainstArc(params: {
       args: [manifest.leaseId],
     });
 
-    if (lease.landlord !== "0x0000000000000000000000000000000000000000") {
-      const isRenter = record.author.toLowerCase() === lease.renter.toLowerCase();
-      const isLandlord =
-        record.author.toLowerCase() === lease.landlord.toLowerCase();
-      if (!isRenter && !isLandlord) {
-        return {
-          valid: false,
-          reason: "Record author is neither the renter nor landlord of this lease.",
-          fileSha256,
-          manifestHash,
-          recordId: params.recordId,
-        };
-      }
-      authorRole = isRenter ? "renter" : "landlord";
+    if (lease.landlord === "0x0000000000000000000000000000000000000000") {
+      return {
+        valid: false,
+        reason: "This record names a lease that doesn't exist on Arc.",
+        fileSha256,
+        manifestHash,
+        recordId: params.recordId,
+      };
+    }
 
+    const isRenter = record.author.toLowerCase() === lease.renter.toLowerCase();
+    const isLandlord = record.author.toLowerCase() === lease.landlord.toLowerCase();
+    if (!isRenter && !isLandlord) {
+      return {
+        valid: false,
+        reason: "Record author is neither the renter nor landlord of this lease.",
+        fileSha256,
+        manifestHash,
+        recordId: params.recordId,
+      };
+    }
+    authorRole = isRenter ? "renter" : "landlord";
+
+    // "Co-signed by the landlord" only means something on the renter's record.
+    if (isRenter) {
       const ackTs = await client.readContract({
         address: registry,
         abi: KEYPRINT_REGISTRY_ABI,

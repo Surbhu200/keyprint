@@ -13,12 +13,14 @@ interface CountdownProps {
   activeMessage: string;
   /** Human message shown once clock reaches zero. */
   expiredMessage: string;
-  /** Lease ID for polling POST /api/keeper/settle every 2s once at zero. */
+  /** Lease ID for asking POST /api/keeper/settle to settle once the deadline has passed. */
   leaseId?: string;
   /** Optional passkey fallback release callback ("Release my deposit"). */
   onManualRelease?: () => Promise<void>;
+  /** Label for the manual button (defaults to "Release my deposit"). */
+  manualReleaseLabel?: string;
   releasing?: boolean;
-  /** Called if the keeper settles the lease automatically. */
+  /** Called if the keeper settles the lease. */
   onKeeperSettled?: (txHash: string) => void;
 }
 
@@ -34,6 +36,8 @@ function formatRemaining(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+const KEEPER_GIVE_UP_HINT_MS = 20_000;
+
 export function Countdown({
   deadlineSec,
   chainNowSec,
@@ -41,6 +45,7 @@ export function Countdown({
   expiredMessage,
   leaseId,
   onManualRelease,
+  manualReleaseLabel = "Release my deposit",
   releasing,
   onKeeperSettled,
 }: CountdownProps) {
@@ -50,6 +55,12 @@ export function Countdown({
   });
   const [keeperStatus, setKeeperStatus] = useState<string | null>(null);
   const settledRef = useRef(false);
+  const inFlightRef = useRef(false);
+  // Keep the latest callback without restarting the polling effect on every parent render.
+  const settledCbRef = useRef(onKeeperSettled);
+  useEffect(() => {
+    settledCbRef.current = onKeeperSettled;
+  }, [onKeeperSettled]);
 
   // Advance local 1s interpolation anchored to the latest chain block timestamp
   useEffect(() => {
@@ -64,63 +75,83 @@ export function Countdown({
   }, [chainNowSec]);
 
   const elapsedForBase = clock.base === chainNowSec ? clock.elapsed : 0;
-  const remaining = Math.max(0, deadlineSec - (chainNowSec + elapsedForBase));
-  const isExpired = remaining <= 0;
+  const nowEstimate = chainNowSec + elapsedForBase;
+  const remaining = Math.max(0, deadlineSec - nowEstimate);
+  // The contract allows settling only strictly after the deadline.
+  const isExpired = nowEstimate > deadlineSec;
+  const displayExpired = remaining <= 0;
 
-  // Poll /api/keeper/settle every 2 seconds once countdown reaches zero
+  const hasManualRelease = Boolean(onManualRelease);
+
+  // Once the deadline has passed, ask Keyprint's keeper to settle every 2 seconds.
+  // The keeper simulates first, so a call before the rules allow it costs nothing.
   useEffect(() => {
     if (!isExpired || !leaseId || settledRef.current) return;
 
     let cancelled = false;
+    const startedAt = Date.now();
     const poll = async () => {
+      if (inFlightRef.current || settledRef.current) return;
+      inFlightRef.current = true;
       try {
         const res = await fetch("/api/keeper/settle", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ leaseId }),
         });
-        const data = (await res.json()) as {
+        const data = (await res.json().catch(() => ({}))) as {
           settled?: boolean;
           txHash?: string;
           reason?: string;
+          keeperUnavailable?: boolean;
         };
-        if (cancelled) return;
         if (data.settled && data.txHash) {
           settledRef.current = true;
-          setKeeperStatus("Refund released automatically.");
-          onKeeperSettled?.(data.txHash);
-        } else if (data.reason) {
-          setKeeperStatus("Releasing deposit…");
+          if (!cancelled) setKeeperStatus("Keyprint released it.");
+          settledCbRef.current?.(data.txHash);
+        } else if (!cancelled) {
+          const waitedLong = Date.now() - startedAt > KEEPER_GIVE_UP_HINT_MS;
+          setKeeperStatus(
+            data.keeperUnavailable || waitedLong
+              ? hasManualRelease
+                ? `Tap "${manualReleaseLabel}" to finish.`
+                : "Waiting for the lease to be settled…"
+              : "Waiting for Arc to confirm the deadline…",
+          );
         }
       } catch {
-        // Retry on next tick
+        // Retry on the next tick.
+      } finally {
+        inFlightRef.current = false;
       }
     };
 
-    poll();
-    const timer = setInterval(poll, 2000);
+    void poll();
+    const timer = setInterval(() => void poll(), 2000);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [isExpired, leaseId, onKeeperSettled]);
+  }, [isExpired, leaseId, hasManualRelease, manualReleaseLabel]);
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div className="space-y-1">
         <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {isExpired ? (
+          {displayExpired ? (
             <ShieldCheck className="h-3.5 w-3.5 text-sealed" />
           ) : (
             <Clock className="h-3.5 w-3.5 text-accent" />
           )}
-          <span>{isExpired ? "Deadline reached" : "Countdown"}</span>
+          <span>{displayExpired ? "Deadline reached" : "Countdown"}</span>
         </div>
         <p className="text-sm text-foreground">
-          {isExpired ? expiredMessage : activeMessage}
+          {displayExpired ? expiredMessage : activeMessage}
         </p>
         {keeperStatus && (
-          <p className="text-xs text-sealed font-medium">{keeperStatus}</p>
+          <p className="text-xs text-sealed font-medium" aria-live="polite">
+            {keeperStatus}
+          </p>
         )}
       </div>
 
@@ -130,7 +161,7 @@ export function Countdown({
         </div>
         {isExpired && onManualRelease && (
           <Button onClick={onManualRelease} disabled={releasing}>
-            {releasing ? "Releasing…" : "Release my deposit"}
+            {releasing ? "Releasing…" : manualReleaseLabel}
           </Button>
         )}
       </div>

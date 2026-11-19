@@ -1,114 +1,274 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Address, Hex } from "viem";
+import { z } from "zod";
+import {
+  createArcPublicClient,
+  getEscrowAddress,
+  getRegistryAddress,
+  KEYPRINT_ESCROW_ABI,
+} from "@/lib/chain/arc";
+import {
+  manifestKindToEnum,
+  ZERO_BYTES32,
+  type KeyprintManifest,
+} from "@/lib/evidence/manifest";
+import {
+  checkRowAgainstRecord,
+  readRecordsOnchain,
+  type OnchainRecordInfo,
+} from "@/lib/evidence/onchain-record";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase/server";
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const HEX32 = /^0x[0-9a-fA-F]{64}$/;
+const PUBLIC_COLUMNS =
+  "record_id, unit_id, lease_id, kind, content_hash, author, manifest_json, tx_hash, block_number, sealed_at";
 
 export async function GET(req: NextRequest) {
   if (!isSupabaseConfigured()) {
-    return NextResponse.json({ records: [], configured: false });
+    return NextResponse.json(
+      { error: "The record index is not configured.", configured: false },
+      { status: 503 },
+    );
   }
 
   const recordId = req.nextUrl.searchParams.get("recordId")?.trim().toLowerCase();
   const leaseId = req.nextUrl.searchParams.get("leaseId")?.trim().toLowerCase();
   const fileSha256 = req.nextUrl.searchParams.get("fileSha256")?.trim().toLowerCase();
 
-  const supabase = getSupabaseAdmin();
+  try {
+    const supabase = getSupabaseAdmin();
 
-  if (recordId) {
-    const { data, error } = await supabase
-      .from("records")
-      .select("*")
-      .eq("record_id", recordId)
-      .maybeSingle();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ record: data ?? null, records: data ? [data] : [] });
-  }
+    if (recordId) {
+      if (!HEX32.test(recordId)) {
+        return NextResponse.json({ error: "Invalid record id." }, { status: 400 });
+      }
+      const { data, error } = await supabase
+        .from("records")
+        .select(PUBLIC_COLUMNS)
+        .eq("record_id", recordId)
+        .maybeSingle();
+      if (error) throw error;
+      return NextResponse.json({ record: data ?? null, records: data ? [data] : [], configured: true });
+    }
 
-  let query = supabase
-    .from("records")
-    .select("*")
-    .order("sealed_at", { ascending: false })
-    .limit(100);
+    if (fileSha256) {
+      // A file's SHA-256 appears verbatim inside the canonical manifest of every record that
+      // lists it. Return every match (the browser verifies each one against Arc).
+      if (!/^[0-9a-f]{64}$/.test(fileSha256)) {
+        return NextResponse.json({ error: "Invalid file fingerprint." }, { status: 400 });
+      }
+      const { data, error } = await supabase
+        .from("records")
+        .select(PUBLIC_COLUMNS)
+        .ilike("manifest_json", `%${fileSha256}%`)
+        .order("sealed_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return NextResponse.json({ records: data ?? [], configured: true });
+    }
 
-  if (leaseId) {
-    query = query.eq("lease_id", leaseId);
-  }
+    if (leaseId) {
+      if (!HEX32.test(leaseId)) {
+        return NextResponse.json({ error: "Invalid lease id." }, { status: 400 });
+      }
+      const { data, error } = await supabase
+        .from("records")
+        .select(PUBLIC_COLUMNS)
+        .eq("lease_id", leaseId)
+        .order("sealed_at", { ascending: true })
+        .limit(200);
+      if (error) throw error;
+      return NextResponse.json({ records: data ?? [], configured: true });
+    }
 
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  let records = data ?? [];
-  if (fileSha256) {
-    records = records.filter((r) =>
-      String(r.manifest_json || "").toLowerCase().includes(fileSha256),
+    return NextResponse.json(
+      { error: "Pass recordId, fileSha256 or leaseId." },
+      { status: 400 },
     );
+  } catch (err) {
+    console.error("GET /api/records failed", err);
+    return NextResponse.json({ error: "The record index could not be read." }, { status: 500 });
   }
-
-  return NextResponse.json({ records, configured: true });
 }
 
+const RecordBody = z.object({
+  record_id: z.string().regex(HEX32),
+  manifest_json: z.string().min(2).max(16_384),
+  file_paths: z.array(z.string().max(300)).max(10).optional(),
+  tx_hash: z.string().regex(HEX32).nullable().optional(),
+  gas_cost_wei: z.string().regex(/^\d{1,40}$/).nullable().optional(),
+});
+
+function bad(status: number, error: string) {
+  return NextResponse.json({ error }, { status });
+}
+
+/** Right after a user operation lands, this server's RPC can lag a block behind the bundler's. */
+async function readRecordWithRetry(recordId: Hex): Promise<OnchainRecordInfo | null> {
+  const client = createArcPublicClient();
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const found = (await readRecordsOnchain([recordId], client)).get(recordId.toLowerCase()) ?? null;
+    if (found) return found;
+    await new Promise((r) => setTimeout(r, 750));
+  }
+  return null;
+}
+
+/**
+ * POST /api/records
+ * Stores a sealed record's exact canonical manifest bytes in the index.
+ * Nothing in the body is trusted: the record must already be sealed on Arc, the manifest
+ * bytes must hash to its contentHash, and every stored field is derived from the chain.
+ * A row that already matches Arc is never overwritten.
+ */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
-    return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+    return bad(503, "The record index is not configured.");
+  }
+  if (!getRegistryAddress()) {
+    return bad(503, "The registry address is not configured.");
+  }
+
+  let body: z.infer<typeof RecordBody>;
+  try {
+    body = RecordBody.parse(await req.json());
+  } catch {
+    return bad(400, "record_id (32-byte hex) and manifest_json (at most 16 KB) are required.");
   }
 
   try {
-    const body = (await req.json()) as {
-      record_id?: string;
-      unit_id?: string;
-      lease_id?: string;
-      kind?: number;
-      content_hash?: string;
-      author?: string;
-      manifest_json?: string;
-      file_paths?: string[];
-      tx_hash?: string | null;
-      block_number?: number | string | null;
-      gas_cost_wei?: string | null;
-    };
+    const recordId = body.record_id.toLowerCase() as Hex;
+    const onchain = await readRecordWithRetry(recordId);
+    if (!onchain) {
+      return bad(409, "This record is not sealed on Arc yet.");
+    }
 
+    const check = await checkRowAgainstRecord(
+      {
+        record_id: recordId,
+        lease_id: onchain.leaseId,
+        kind: onchain.kind,
+        author: onchain.author,
+        manifest_json: body.manifest_json,
+      },
+      onchain,
+    );
+    if (!check.ok) return bad(422, check.reason);
+
+    let manifest: KeyprintManifest;
+    try {
+      manifest = JSON.parse(body.manifest_json) as KeyprintManifest;
+    } catch {
+      return bad(422, "Manifest is not valid JSON.");
+    }
     if (
-      !body.record_id ||
-      !body.content_hash ||
-      !body.author ||
-      !body.manifest_json ||
-      body.kind === undefined
+      manifestKindToEnum(manifest) !== onchain.kind ||
+      String(manifest.leaseId ?? "").toLowerCase() !== onchain.leaseId.toLowerCase()
     ) {
-      return NextResponse.json(
-        { error: "record_id, kind, content_hash, author, and manifest_json are required." },
-        { status: 400 },
-      );
+      return bad(422, "Manifest kind or lease does not match the sealed record.");
+    }
+
+    const leaseIdLower = onchain.leaseId.toLowerCase();
+    const isSolo = leaseIdLower === ZERO_BYTES32;
+    if (!isSolo) {
+      const escrow = getEscrowAddress();
+      if (!escrow) return bad(503, "The escrow address is not configured.");
+      const lease = await createArcPublicClient().readContract({
+        address: escrow,
+        abi: KEYPRINT_ESCROW_ABI,
+        functionName: "getLease",
+        args: [onchain.leaseId],
+      });
+      const author = onchain.author.toLowerCase();
+      if (
+        lease.landlord === ZERO_ADDRESS ||
+        (author !== lease.renter.toLowerCase() && author !== lease.landlord.toLowerCase())
+      ) {
+        return bad(422, "The record's author is not a party to this lease.");
+      }
+    }
+
+    // Only keep storage paths inside this record's own lease (or solo) folder.
+    const allowedPrefixes = isSolo
+      ? ["solo/", "solo-photos/"]
+      : [`leases/${leaseIdLower}/`];
+    const filePaths = (body.file_paths ?? []).filter(
+      (p) =>
+        !p.includes("..") &&
+        allowedPrefixes.some((prefix) => p.toLowerCase().startsWith(prefix)),
+    );
+
+    // Only accept a tx hash whose receipt really contains this record's RecordSealed log.
+    let txHash: string | null = null;
+    let blockNumber: number | null = null;
+    if (body.tx_hash) {
+      try {
+        const receipt = await createArcPublicClient().getTransactionReceipt({
+          hash: body.tx_hash as Hex,
+        });
+        const registry = getRegistryAddress()!.toLowerCase();
+        const hasSealLog = receipt.logs.some(
+          (log) =>
+            log.address.toLowerCase() === registry &&
+            (log.topics[1] ?? "").toLowerCase() === recordId,
+        );
+        if (hasSealLog) {
+          txHash = body.tx_hash.toLowerCase();
+          blockNumber = Number(receipt.blockNumber);
+        }
+      } catch {
+        // Unknown or pending tx: store the record without a receipt link.
+      }
     }
 
     const supabase = getSupabaseAdmin();
+    const { data: existing } = await supabase
+      .from("records")
+      .select(PUBLIC_COLUMNS)
+      .eq("record_id", recordId)
+      .maybeSingle();
+
+    if (
+      existing &&
+      existing.manifest_json === body.manifest_json &&
+      Number(existing.kind) === onchain.kind &&
+      String(existing.lease_id).toLowerCase() === leaseIdLower &&
+      String(existing.author).toLowerCase() === onchain.author.toLowerCase() &&
+      String(existing.content_hash).toLowerCase() === onchain.contentHash.toLowerCase()
+    ) {
+      // Already stored and identical to Arc: idempotent success, never overwrite.
+      return NextResponse.json({ record: existing });
+    }
+
+    // Either new, or the stored row doesn't match Arc (written before verification existed):
+    // replace it with the verified bytes.
     const { data, error } = await supabase
       .from("records")
       .upsert(
         {
-          record_id: body.record_id.toLowerCase(),
-          unit_id: (body.unit_id || "0x" + "0".repeat(64)).toLowerCase(),
-          lease_id: (body.lease_id || "0x" + "0".repeat(64)).toLowerCase(),
-          kind: Number(body.kind),
-          content_hash: body.content_hash.toLowerCase(),
-          author: body.author.toLowerCase(),
+          record_id: recordId,
+          unit_id: onchain.unitId.toLowerCase(),
+          lease_id: leaseIdLower,
+          kind: onchain.kind,
+          content_hash: onchain.contentHash.toLowerCase(),
+          author: (onchain.author as Address).toLowerCase(),
           manifest_json: body.manifest_json,
-          file_paths: body.file_paths ?? [],
-          tx_hash: body.tx_hash ?? null,
-          block_number: body.block_number ? Number(body.block_number) : null,
+          file_paths: filePaths,
+          tx_hash: txHash,
+          block_number: blockNumber,
           gas_cost_wei: body.gas_cost_wei ?? "0",
+          sealed_at: new Date(onchain.createdAt * 1000).toISOString(),
         },
         { onConflict: "record_id" },
       )
-      .select("*")
+      .select(PUBLIC_COLUMNS)
       .single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
+    if (error) throw error;
     return NextResponse.json({ record: data });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Invalid record payload." },
-      { status: 400 },
-    );
+    console.error("POST /api/records failed", err);
+    return bad(500, "The record could not be saved.");
   }
 }

@@ -216,10 +216,18 @@ export async function loginPasskeyAccount(
 /**
  * Sends one or more contract calls in a single atomic, gas-sponsored ERC-4337
  * UserOperation on Arc Testnet using Circle Modular Wallets (paymaster: true).
+ *
+ * Throws if the operation was included but its calls reverted (receipt.success === false):
+ * a bundle transaction can succeed while the user's calls inside it fail, and treating
+ * that as success would silently skip a dispute or a seal at a deadline.
  */
 export async function sendSponsoredCalls(
   session: SavedPasskeySession,
   calls: SponsoredCall[],
+  options?: {
+    /** Called once the passkey has signed and the operation is on its way. */
+    onSubmitted?: (userOpHash: Hex) => void;
+  },
 ): Promise<UserOpResult> {
   if (calls.length === 0) {
     throw new Error("No calls to submit.");
@@ -238,16 +246,26 @@ export async function sendSponsoredCalls(
     account,
     chain: arcTestnet,
     transport,
+    // arcTestnet has no blockTime in viem, so receipts would otherwise be polled every 4 s.
+    pollingInterval: 500,
   });
 
   const userOpHash = await bundler.sendUserOperation({
     calls,
     paymaster: true,
   });
+  options?.onSubmitted?.(userOpHash);
 
   const opReceipt = await bundler.waitForUserOperationReceipt({
     hash: userOpHash,
   });
+
+  if (!opReceipt.success) {
+    // Raw revert data (0x…) means nothing to people; a readable reason is kept.
+    const reason =
+      opReceipt.reason && !/^0x/i.test(opReceipt.reason.trim()) ? ` (${opReceipt.reason})` : "";
+    throw new Error(`This step was rejected by the contract${reason}. Nothing changed.`);
+  }
 
   return {
     userOpHash,
@@ -255,6 +273,56 @@ export async function sendSponsoredCalls(
     blockNumber: opReceipt.receipt.blockNumber,
     actualGasCost: opReceipt.actualGasCost ?? 0n,
   };
+}
+
+/** Arc's block time for a confirmed operation, so seal times never come from this device's clock. */
+export async function sealTimeIso(blockNumber: bigint): Promise<string> {
+  try {
+    const block = await createArcPublicClient().getBlock({ blockNumber });
+    return new Date(Number(block.timestamp) * 1000).toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
+/**
+ * Turns wallet, passkey and contract errors into plain words for main screens.
+ * The raw message is still logged to the console for debugging.
+ */
+export function friendlyError(err: unknown, fallback = "Something went wrong. Nothing was sent."): string {
+  const raw = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  if (raw) console.error("[keyprint]", err);
+  const text = raw.toLowerCase();
+  if (!text) return fallback;
+  if (
+    text.includes("notallowederror") ||
+    text.includes("not allowed") ||
+    text.includes("timed out or was not allowed") ||
+    text.includes("operation was aborted") ||
+    text.includes("abort") ||
+    text.includes("cancel")
+  ) {
+    return "Passkey prompt closed. Nothing was sent.";
+  }
+  if (text.includes("next_public_circle_client_key")) {
+    return "Passkey sign-in isn't available right now. You can still open the sample apartment and Verify.";
+  }
+  if (text.includes("transfer amount exceeds balance") || text.includes("insufficient")) {
+    return "Not enough dollars in this account for this step.";
+  }
+  if (text.includes("invalidleasestate") || text.includes("alreadysettled")) {
+    return "This step already happened. Refreshing…";
+  }
+  if (text.includes("rejected by the contract")) {
+    return raw;
+  }
+  if (text.includes("fetch") || text.includes("network") || text.includes("http request failed")) {
+    return "Couldn't reach Arc right now. Check the connection and try again.";
+  }
+  if (text.includes("useroperation") || text.includes("calldata") || text.includes("0x")) {
+    return fallback;
+  }
+  return raw.length > 160 ? fallback : raw;
 }
 
 /**

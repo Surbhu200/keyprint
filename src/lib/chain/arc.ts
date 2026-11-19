@@ -42,9 +42,9 @@ export const RecordKindName: Record<RecordKindValue, string> = {
 };
 
 export const LeaseStateLabel = {
-  0: "Created",
-  1: "Funded",
-  2: "Ended",
+  0: "Waiting for move-in",
+  1: "Moved in",
+  2: "Moved out",
   3: "Settled",
 } as const;
 

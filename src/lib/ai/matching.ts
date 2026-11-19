@@ -8,6 +8,8 @@ export interface BoundingBoxPx {
 export interface MoveInPinRef {
   id: string;
   position: [number, number, number];
+  /** Sealed surface normal (move-in coordinates), used to place the pin's camera. */
+  normal?: [number, number, number];
   sealedAt: number;
   coSigned: boolean;
   text: string;
@@ -67,7 +69,9 @@ export function findMatchingMoveInPin(params: {
   const eligible = params.moveInPins.filter((p) => p.countsAsMoveIn);
   if (eligible.length === 0) return null;
 
-  // 1. 2D box overlap check (grown by 10%)
+  // 1. 2D box overlap check (grown by 10%). When the change's 3D point is known, a pin must
+  //    also be within 0.5 m of it, so a pin hidden behind a wall that merely projects into the
+  //    box can't make new damage look pre-existing. The nearest qualifying pin wins.
   if (params.box && params.projectedPins?.length) {
     const padX = params.box.w * 0.1;
     const padY = params.box.h * 0.1;
@@ -76,12 +80,20 @@ export function findMatchingMoveInPin(params: {
     const minY = params.box.y - padY;
     const maxY = params.box.y + params.box.h + padY;
 
+    let best: MoveInPinRef | null = null;
+    let bestDist = Infinity;
     for (const proj of params.projectedPins) {
-      if (proj.x >= minX && proj.x <= maxX && proj.y >= minY && proj.y <= maxY) {
-        const match = eligible.find((p) => p.id === proj.id);
-        if (match) return match;
+      if (proj.x < minX || proj.x > maxX || proj.y < minY || proj.y > maxY) continue;
+      const pin = eligible.find((p) => p.id === proj.id);
+      if (!pin) continue;
+      const d = params.worldPosition ? distance3D(params.worldPosition, pin.position) : 0;
+      if (params.worldPosition && d > 0.5) continue;
+      if (d < bestDist) {
+        bestDist = d;
+        best = pin;
       }
     }
+    if (best) return best;
   }
 
   // 2. 3D geometric distance <= 15 cm (0.15 m)
@@ -103,10 +115,13 @@ export function findMatchingMoveInPin(params: {
 
 /**
  * Merges changes detected from different views whose 3D world hits fall within 10 cm (0.10 m).
- * Keeps the higher-confidence entry when merging duplicates.
+ * Keeps the higher-confidence entry, but never loses information when merging:
+ * a pin match found in either view is kept, and "possible damage" wins over the other
+ * categories so a real change can't be hidden under "not a real change".
  */
 export function mergeNearbyChanges(changes: DetectedChange[]): DetectedChange[] {
   const rank = { high: 3, medium: 2, low: 1 };
+  const categoryRank = { possible_damage: 3, possible_wear: 2, not_a_real_change: 1 };
   const kept: DetectedChange[] = [];
 
   for (const item of changes) {
@@ -119,9 +134,19 @@ export function mergeNearbyChanges(changes: DetectedChange[]): DetectedChange[] 
     );
     if (existingIdx === -1) {
       kept.push(item);
-    } else if (rank[item.confidence] > rank[kept[existingIdx].confidence]) {
-      kept[existingIdx] = item;
+      continue;
     }
+    const prev = kept[existingIdx];
+    const winner = rank[item.confidence] > rank[prev.confidence] ? item : prev;
+    const loser = winner === item ? prev : item;
+    kept[existingIdx] = {
+      ...winner,
+      category:
+        categoryRank[loser.category] > categoryRank[winner.category]
+          ? loser.category
+          : winner.category,
+      matchedMoveInPin: winner.matchedMoveInPin ?? loser.matchedMoveInPin ?? null,
+    };
   }
 
   return kept;

@@ -23,6 +23,8 @@ import {
 } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
+  friendlyError,
+  sealTimeIso,
   sendSponsoredCalls,
 } from "@/lib/chain/wallet";
 import { sha256Blob } from "@/lib/evidence/hash";
@@ -32,6 +34,7 @@ import {
   type EvidenceManifestV1,
   type PinManifestV1,
 } from "@/lib/evidence/manifest";
+import { saveRecordManifests } from "@/lib/evidence/record-store";
 import { REFERENCE_MOVE_IN_URL } from "@/lib/sample/reference";
 import { uploadToPrivateStorage } from "@/lib/supabase/upload";
 import { cn } from "@/lib/utils";
@@ -58,6 +61,7 @@ export default function SoloNewUnitPage() {
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [sealedRecord, setSealedRecord] = useState<{
     recordId: string;
     txHash: string;
@@ -70,7 +74,10 @@ export default function SoloNewUnitPage() {
     setScanName(file.name);
     setScanUrl(URL.createObjectURL(file));
     setPins([]);
+    setPendingTap(null);
     setSealedRecord(null);
+    setNotice(null);
+    setError(null);
   };
 
   const handleAddPin = () => {
@@ -95,7 +102,9 @@ export default function SoloNewUnitPage() {
       setError("Sign in with your passkey first to seal your apartment.");
       return;
     }
+    if (sealedRecord) return;
     setError(null);
+    setNotice(null);
     setBusy("Hashing your 3D scan…");
 
     try {
@@ -105,23 +114,21 @@ export default function SoloNewUnitPage() {
         setBusy(`Hashing 3D scan… ${pct}%`),
       );
 
-      // Upload privately if Supabase is configured (graceful if testing locally without Supabase)
-      let scanPath = scanUrl;
-      try {
+      // Your own scan is kept in private storage. The bundled sample model is public already,
+      // so it is sealed by its fingerprint without uploading another copy.
+      let scanPath: string | null = null;
+      if (scanFile) {
         setBusy("Uploading 3D scan privately…");
-        const uploaded = await uploadToPrivateStorage({
-          file: scanBlob,
-          filename: scanName,
-          contentType: "model/gltf-binary",
-          scope: "solo",
-        });
-        scanPath = uploaded.path;
-      } catch {
-        // Still allow sealing if using built-in reference scan without Supabase configured
-        if (scanFile) {
-          throw new Error(
-            "Private storage upload failed. Check your Supabase env vars in .env.local.",
-          );
+        try {
+          const uploaded = await uploadToPrivateStorage({
+            file: scanBlob,
+            filename: scanName,
+            contentType: "model/gltf-binary",
+            scope: "solo",
+          });
+          scanPath = uploaded.path;
+        } catch {
+          throw new Error("Could not upload your scan to private storage. Nothing was sealed.");
         }
       }
 
@@ -216,54 +223,43 @@ export default function SoloNewUnitPage() {
 
       const allCalls = [...scanCalls, ...pinCalls];
       setBusy("Confirm with one touch to seal…");
-      const op = await sendSponsoredCalls(session, allCalls);
+      const op = await sendSponsoredCalls(session, allCalls, {
+        onSubmitted: () => setBusy("Sealing on Arc…"),
+      });
 
-      // Persist exact canonical manifests in index (best-effort; chain is source of truth)
-      await fetch("/api/records", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // Save the exact manifest bytes (local backup + retries; see record-store).
+      // Arc is the source of truth; the index is how the Verify page finds them by file.
+      const failedSaves = await saveRecordManifests([
+        {
           record_id: moveInRecordId,
-          unit_id: unitId,
           lease_id: ZERO_BYTES32,
-          kind: RecordKind.MoveInScan,
-          content_hash: scanCanon.contentHash,
-          author: session.address,
           manifest_json: scanCanon.canonicalJson,
-          file_paths: [scanPath],
+          file_paths: scanPath ? [scanPath] : [],
           tx_hash: op.txHash,
-          block_number: Number(op.blockNumber),
           gas_cost_wei: op.actualGasCost.toString(),
-        }),
-      }).catch(() => null);
-
-      for (let i = 0; i < pinPrepared.length; i++) {
-        await fetch("/api/records", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            record_id: pinRecordIds[i],
-            unit_id: unitId,
-            lease_id: ZERO_BYTES32,
-            kind: RecordKind.Pin,
-            content_hash: pinPrepared[i].contentHash,
-            author: session.address,
-            manifest_json: pinPrepared[i].canonicalJson,
-            file_paths: pinPrepared[i].photoPath ? [pinPrepared[i].photoPath] : [],
-            tx_hash: op.txHash,
-            block_number: Number(op.blockNumber),
-          }),
-        }).catch(() => null);
-      }
+        },
+        ...pinPrepared.map((p, i) => ({
+          record_id: pinRecordIds[i],
+          lease_id: ZERO_BYTES32,
+          manifest_json: p.canonicalJson,
+          file_paths: p.photoPath ? [p.photoPath] : [],
+          tx_hash: op.txHash,
+        })),
+      ]);
 
       setSealedRecord({
         recordId: moveInRecordId,
         txHash: op.txHash,
-        sealedAt: new Date().toISOString(),
+        sealedAt: await sealTimeIso(op.blockNumber),
         manifestJson: scanCanon.canonicalJson,
       });
+      if (failedSaves > 0) {
+        setNotice(
+          "Sealed on Arc. Some details haven't reached Keyprint's index yet; they'll be retried the next time you open Keyprint in this browser.",
+        );
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not seal apartment.");
+      setError(friendlyError(err, "Your apartment wasn't sealed. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -337,9 +333,13 @@ export default function SoloNewUnitPage() {
             <RoomViewer
               url={scanUrl}
               pins={viewerPins}
-              onSurfaceTap={(tap) => setPendingTap(tap)}
-              heightClassName="h-[480px]"
-              hint="Tap any wall, desk, or floor spot to pin existing damage"
+              onSurfaceTap={sealedRecord ? undefined : (tap) => setPendingTap(tap)}
+              heightClassName="h-[55vh] max-h-[520px] min-h-[320px]"
+              hint={
+                sealedRecord
+                  ? "Sealed. Drag to look around."
+                  : "Tap any wall, desk, or floor spot to pin existing damage"
+              }
             />
           </div>
 
@@ -348,7 +348,9 @@ export default function SoloNewUnitPage() {
               <CardHeader>
                 <CardTitle className="text-base">Apartment &amp; 3D scan</CardTitle>
                 <CardDescription>
-                  Using {scanName}. Export a .glb from Scaniverse or Polycam, or test with the built-in room scan.
+                  {scanFile
+                    ? `Using your scan: ${scanName}.`
+                    : "Showing a sample scan (a public research scan of a real apartment), not your home. Import a .glb exported from Scaniverse or Polycam to seal your own."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -356,6 +358,8 @@ export default function SoloNewUnitPage() {
                   type="text"
                   value={unitName}
                   onChange={(e) => setUnitName(e.target.value)}
+                  disabled={Boolean(sealedRecord)}
+                  aria-label="Apartment name"
                   className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
                   placeholder="Unit name"
                 />
@@ -439,31 +443,46 @@ export default function SoloNewUnitPage() {
                           {p.photoFile ? `Photo: ${p.photoFile.name}` : "Spatial pin"}
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPins((prev) => prev.filter((item) => item.id !== p.id))
-                        }
-                        className="text-muted-foreground hover:text-claim p-1 cursor-pointer"
-                        aria-label="Remove pin"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {!sealedRecord && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPins((prev) => prev.filter((item) => item.id !== p.id))
+                          }
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:text-claim cursor-pointer"
+                          aria-label={`Remove pin: ${p.text}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
 
-                {error && <p className="text-xs text-claim pt-1">{error}</p>}
+                {error && (
+                  <p className="text-xs text-claim pt-1" role="alert">
+                    {error}
+                  </p>
+                )}
+                {notice && <p className="text-xs text-muted-foreground pt-1">{notice}</p>}
 
                 <Button
                   className="w-full mt-2"
                   size="lg"
-                  disabled={busy !== null || !session}
+                  disabled={busy !== null || !session || Boolean(sealedRecord)}
                   onClick={handleSealSolo}
                 >
                   <ShieldCheck className="h-4 w-4" />
-                  {busy ?? "Seal my apartment"}
+                  {busy ?? (sealedRecord ? "Sealed on Arc" : "Seal my apartment")}
                 </Button>
+                {sealedRecord && (
+                  <Link
+                    href={`/verify?recordId=${sealedRecord.recordId}`}
+                    className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
+                  >
+                    Check it on Verify
+                  </Link>
+                )}
               </CardContent>
             </Card>
           </div>

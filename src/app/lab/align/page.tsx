@@ -77,7 +77,7 @@ export default function AlignLabPage() {
             <CardDescription>
               Currently loaded:{" "}
               {usingReference
-                ? "Built-in real-world Meta Replica 3D apartment scan (move-out has a 12° yaw + translation + 0.4% scale offset)"
+                ? "Built-in sample: Meta's Replica research scan of a real apartment. The move-out copy is the same scan with a synthetic 12° turn, shift and 0.4% scale change, plus a staged stain."
                 : "Custom uploaded .glb scans"}
             </CardDescription>
           </CardHeader>

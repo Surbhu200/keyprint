@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
-import { formatDollars, LeaseStateLabel } from "@/lib/chain/arc";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
+import { formatDollars, getEscrowAddress, LeaseStateLabel } from "@/lib/chain/arc";
 import { cn } from "@/lib/utils";
 import { AppNav } from "./AppNav";
 import { Badge } from "./ui/badge";
@@ -46,7 +46,30 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
   const stateName =
     live.lease !== null
       ? LeaseStateLabel[live.lease.state as keyof typeof LeaseStateLabel] || "Active"
-      : "Loading";
+      : live.loading
+        ? "Loading"
+        : "Not found";
+
+  // The money badge says what is actually true onchain right now.
+  let depositBadge: string | null = null;
+  if (live.lease) {
+    const amount = formatDollars(live.lease.deposit);
+    depositBadge =
+      live.lease.state === 0
+        ? `${amount} deposit · not paid yet`
+        : live.lease.state === 3
+          ? `${amount} deposit · settled`
+          : `${amount} protected`;
+  }
+
+  let notice: string | null = null;
+  if (!getEscrowAddress()) {
+    notice = "This deployment isn't connected to the Arc escrow contract, so lease details can't load.";
+  } else if (live.error && !live.lease) {
+    notice = "Can't reach Arc right now. Retrying every few seconds…";
+  } else if (!live.loading && !live.lease) {
+    notice = "This lease doesn't exist on Arc. Check the link, or start a new lease from Home.";
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -60,15 +83,15 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
                 {live.meta?.unit_name || "Apartment Lease"}
               </h1>
               <p className="text-xs text-muted-foreground">
-                Live record · updates automatically every 2 seconds
+                Live from Arc · refreshes every few seconds
               </p>
             </div>
 
             <div className="flex items-center gap-2">
-              {live.lease && (
-                <Badge variant="sealed">
+              {depositBadge && (
+                <Badge variant={live.lease?.state === 0 ? "default" : "sealed"}>
                   <ShieldCheck className="h-3.5 w-3.5" />
-                  {formatDollars(live.lease.deposit)} protected
+                  {depositBadge}
                 </Badge>
               )}
               <Badge variant="default">{stateName}</Badge>
@@ -94,7 +117,23 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
         </div>
       </div>
 
-      <main className="flex-1 mx-auto w-full max-w-6xl px-5 py-6">
+      <main className="flex-1 mx-auto w-full max-w-6xl px-5 py-6 space-y-4">
+        {notice && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm"
+          >
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-claim" />
+            <span>{notice}</span>
+          </div>
+        )}
+        {live.unverifiedRecordCount > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {live.unverifiedRecordCount} saved item{live.unverifiedRecordCount === 1 ? "" : "s"} didn&apos;t match
+            {" "}what&apos;s sealed on Arc (or {live.unverifiedRecordCount === 1 ? "is" : "are"} still confirming), so{" "}
+            {live.unverifiedRecordCount === 1 ? "it's" : "they're"} hidden.
+          </p>
+        )}
         {children}
       </main>
     </div>

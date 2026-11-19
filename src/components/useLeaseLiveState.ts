@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
 import {
   createArcPublicClient,
@@ -9,6 +9,11 @@ import {
   KEYPRINT_ESCROW_ABI,
   KEYPRINT_REGISTRY_ABI,
 } from "@/lib/chain/arc";
+import {
+  checkRowAgainstRecord,
+  readRecordsOnchain,
+} from "@/lib/evidence/onchain-record";
+import { retryPendingRecordSaves } from "@/lib/evidence/record-store";
 
 export interface OnchainLease {
   leaseId: Hex;
@@ -52,11 +57,15 @@ export interface StoredRecordRow {
   content_hash: string;
   author: string;
   manifest_json: string;
-  file_paths: string[];
+  /** Never sent to the browser by /api/leases/[id]; kept optional for older callers. */
+  file_paths?: string[];
   tx_hash: string | null;
   block_number: number | null;
   gas_cost_wei: string | null;
+  /** ISO time. For rows returned by this hook it is the onchain seal time, never the DB insert time. */
   sealed_at: string;
+  /** Onchain seal time (unix seconds) from KeyprintRegistry.getRecord().createdAt. */
+  chain_created_at?: number;
 }
 
 export interface StoredLeaseMeta {
@@ -94,15 +103,27 @@ export interface LeaseLiveState {
   lease: OnchainLease | null;
   claims: OnchainClaim[];
   meta: StoredLeaseMeta | null;
+  /** Only rows whose manifest bytes, kind, lease and author match what is sealed on Arc. */
   records: StoredRecordRow[];
+  /** How many index rows were dropped because they don't match Arc (shown as a warning, never used). */
+  unverifiedRecordCount: number;
   coSignedMap: Record<string, number>;
   signedUrls: { moveInScan?: string | null; moveOutScan?: string | null };
   refresh: () => Promise<void>;
 }
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+type VerifiedEntry = { manifest: string; row: StoredRecordRow | null };
+
 /**
- * Polls KeyprintEscrow + KeyprintRegistry + latest Arc block timestamp every 2 seconds
+ * Polls KeyprintEscrow + KeyprintRegistry + the latest Arc block every 2 seconds
  * so landlord and renter screens stay live without manual reloads.
+ *
+ * Index rows from /api/leases/[id] are untrusted: each one is checked against
+ * KeyprintRegistry (sha256(manifest_json) == contentHash, matching id, kind, lease
+ * and a lease-party author) before any page can use it. Verified results are
+ * memoized per record id + manifest text, since sealed records never change.
  */
 export function useLeaseLiveState(leaseId: string): LeaseLiveState {
   const [loading, setLoading] = useState(true);
@@ -114,13 +135,32 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
   const [claims, setClaims] = useState<OnchainClaim[]>([]);
   const [meta, setMeta] = useState<StoredLeaseMeta | null>(null);
   const [records, setRecords] = useState<StoredRecordRow[]>([]);
+  const [unverifiedRecordCount, setUnverifiedRecordCount] = useState(0);
   const [coSignedMap, setCoSignedMap] = useState<Record<string, number>>({});
   const [signedUrls, setSignedUrls] = useState<{
     moveInScan?: string | null;
     moveOutScan?: string | null;
   }>({});
 
-  const refresh = useCallback(async () => {
+  const inFlight = useRef<Promise<void> | null>(null);
+  const verifiedCache = useRef(new Map<string, VerifiedEntry>());
+  // Signed storage URLs carry a fresh token on every poll; keep the first one per path
+  // so viewers don't re-download the whole scan every 2 seconds.
+  const urlByPath = useRef(new Map<string, string>());
+
+  const stableUrl = useCallback(
+    (path: string | null | undefined, fresh: string | null | undefined) => {
+      if (!fresh) return null;
+      if (!path) return fresh;
+      const known = urlByPath.current.get(path);
+      if (known) return known;
+      urlByPath.current.set(path, fresh);
+      return fresh;
+    },
+    [],
+  );
+
+  const runOnce = useCallback(async () => {
     if (!leaseId || !/^0x[0-9a-fA-F]{64}$/.test(leaseId)) {
       setError("Invalid lease ID.");
       setLoading(false);
@@ -130,14 +170,14 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
     try {
       const escrow = getEscrowAddress();
       const registry = getRegistryAddress();
+      const client = createArcPublicClient();
 
       const [apiRes, chainData] = await Promise.all([
         fetch(`/api/leases/${encodeURIComponent(leaseId)}`, { cache: "no-store" })
-          .then((r) => r.json())
+          .then(async (r) => (r.ok ? r.json() : null))
           .catch(() => null),
         (async () => {
           if (!escrow) return null;
-          const client = createArcPublicClient();
           const [block, rawLease, rawClaims] = await Promise.all([
             client.getBlock({ blockTag: "latest" }),
             client.readContract({
@@ -157,16 +197,12 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
         })(),
       ]);
 
-      const fetchedRecords: StoredRecordRow[] = apiRes?.records ?? [];
-      setMeta(apiRes?.lease ?? null);
-      setRecords(fetchedRecords);
-      setSignedUrls(apiRes?.signedUrls ?? {});
-
+      let parsedLease: OnchainLease | null = null;
       if (chainData) {
         setChainNowSec(Number(chainData.block.timestamp));
         const r = chainData.rawLease;
-        const parsedLease: OnchainLease | null =
-          r.landlord === "0x0000000000000000000000000000000000000000"
+        parsedLease =
+          r.landlord === ZERO_ADDRESS
             ? null
             : {
                 leaseId: r.leaseId,
@@ -203,26 +239,101 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
             state: Number(c.state),
           })),
         );
+      }
 
-        // Read onchain landlord co-sign status directly from KeyprintRegistry.acknowledgedAt
-        if (parsedLease && registry && fetchedRecords.length > 0) {
-          const client = createArcPublicClient();
-          const ackEntries = await Promise.all(
-            fetchedRecords.map(async (rec) => {
-              try {
-                const ts = await client.readContract({
-                  address: registry,
-                  abi: KEYPRINT_REGISTRY_ABI,
-                  functionName: "acknowledgedAt",
-                  args: [rec.record_id as Hex, parsedLease.landlord],
-                });
-                return [rec.record_id.toLowerCase(), Number(ts)] as const;
-              } catch {
-                return [rec.record_id.toLowerCase(), 0] as const;
-              }
-            }),
+      // Only replace index-backed state when the index answered; a failed request
+      // keeps what is on screen instead of rolling the UI back.
+      if (apiRes && !apiRes.error) {
+        const rawRows: StoredRecordRow[] = Array.isArray(apiRes.records)
+          ? apiRes.records
+          : [];
+        const nextMeta: StoredLeaseMeta | null = apiRes.lease ?? null;
+        setMeta(nextMeta);
+        setSignedUrls({
+          moveInScan: stableUrl(nextMeta?.move_in_scan_path, apiRes.signedUrls?.moveInScan),
+          moveOutScan: stableUrl(nextMeta?.move_out_scan_path, apiRes.signedUrls?.moveOutScan),
+        });
+
+        // Verify rows we haven't verified yet (or whose manifest text changed).
+        const cache = verifiedCache.current;
+        const toCheck = rawRows.filter((row) => {
+          const hit = cache.get(row.record_id.toLowerCase());
+          return !hit || hit.manifest !== row.manifest_json;
+        });
+        if (toCheck.length > 0 && registry) {
+          const onchain = await readRecordsOnchain(
+            toCheck.map((row) => row.record_id as Hex),
+            client,
           );
-          setCoSignedMap(Object.fromEntries(ackEntries));
+          for (const row of toCheck) {
+            const info = onchain.get(row.record_id.toLowerCase()) ?? null;
+            const check = await checkRowAgainstRecord(row, info);
+            if (check.ok) {
+              cache.set(row.record_id.toLowerCase(), {
+                manifest: row.manifest_json,
+                row: {
+                  ...row,
+                  author: check.onchain.author.toLowerCase(),
+                  chain_created_at: check.onchain.createdAt,
+                  sealed_at: new Date(check.onchain.createdAt * 1000).toISOString(),
+                },
+              });
+            } else if (info) {
+              // Sealed on Arc but the stored row doesn't match it: never trust this text.
+              cache.set(row.record_id.toLowerCase(), { manifest: row.manifest_json, row: null });
+            }
+            // Not sealed yet (or RPC lag right after sealing): leave uncached and retry next poll.
+          }
+        }
+
+        const verifiedRows: StoredRecordRow[] = [];
+        let unverified = 0;
+        for (const row of rawRows) {
+          const hit = cache.get(row.record_id.toLowerCase());
+          if (hit?.row && hit.manifest === row.manifest_json) {
+            verifiedRows.push(hit.row);
+          } else {
+            unverified += 1;
+          }
+        }
+
+        // Records of a lease must be authored by that lease's renter or landlord.
+        const parties = parsedLease
+          ? [parsedLease.renter.toLowerCase(), parsedLease.landlord.toLowerCase()]
+          : null;
+        const partyRows = parties
+          ? verifiedRows.filter((row) => parties.includes(row.author.toLowerCase()))
+          : verifiedRows;
+        unverified += verifiedRows.length - partyRows.length;
+
+        partyRows.sort((a, b) => (a.chain_created_at ?? 0) - (b.chain_created_at ?? 0));
+        setRecords(partyRows);
+        setUnverifiedRecordCount(unverified);
+
+        // Landlord co-sign status comes only from KeyprintRegistry.acknowledgedAt.
+        if (parsedLease && registry && partyRows.length > 0) {
+          const ackResults = await client.multicall({
+            allowFailure: true,
+            contracts: partyRows.map((row) => ({
+              address: registry,
+              abi: KEYPRINT_REGISTRY_ABI,
+              functionName: "acknowledgedAt" as const,
+              args: [row.record_id as Hex, parsedLease!.landlord] as const,
+            })),
+          });
+          setCoSignedMap(
+            Object.fromEntries(
+              partyRows.map((row, i) => {
+                const res = ackResults[i];
+                return [
+                  row.record_id.toLowerCase(),
+                  res.status === "success" ? Number(res.result) : 0,
+                ];
+              }),
+            ),
+          );
+        } else if (partyRows.length === 0) {
+          setCoSignedMap({});
         }
       }
 
@@ -232,20 +343,42 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
     } finally {
       setLoading(false);
     }
+  }, [leaseId, stableUrl]);
+
+  // Background polls skip while one is running, so a slow response can never land
+  // after a newer one. Explicit refreshes (after an action) wait, then read fresh state.
+  const poll = useCallback(() => {
+    if (inFlight.current) return;
+    const p = runOnce().finally(() => {
+      inFlight.current = null;
+    });
+    inFlight.current = p;
+  }, [runOnce]);
+
+  const refresh = useCallback(async () => {
+    while (inFlight.current) {
+      await inFlight.current;
+    }
+    const p = runOnce().finally(() => {
+      inFlight.current = null;
+    });
+    inFlight.current = p;
+    await p;
+  }, [runOnce]);
+
+  useEffect(() => {
+    // Re-send any manifests this browser sealed but the index never confirmed.
+    void retryPendingRecordSaves(leaseId).catch(() => undefined);
   }, [leaseId]);
 
   useEffect(() => {
-    const first = setTimeout(() => {
-      void refresh();
-    }, 0);
-    const id = setInterval(() => {
-      void refresh();
-    }, 2000);
+    const first = setTimeout(poll, 0);
+    const id = setInterval(poll, 2000);
     return () => {
       clearTimeout(first);
       clearInterval(id);
     };
-  }, [refresh]);
+  }, [poll]);
 
   return {
     loading,
@@ -255,6 +388,7 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
     claims,
     meta,
     records,
+    unverifiedRecordCount,
     coSignedMap,
     signedUrls,
     refresh,

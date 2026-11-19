@@ -29,7 +29,7 @@ const COMPARISON_ROWS = [
   {
     question: "Evidence",
     today: "Landlord's phone",
-    keyprint: "Sealed 3D record co-signed by both sides",
+    keyprint: "3D record sealed by the renter, co-signed by the landlord",
   },
   {
     question: "Burden of proof",
@@ -39,7 +39,7 @@ const COMPARISON_ROWS = [
   {
     question: "No claim by deadline",
     today: "Landlord keeps it",
-    keyprint: "Full deposit comes back automatically",
+    keyprint: "Full deposit goes back to the renter",
   },
 ] as const;
 
@@ -131,18 +131,18 @@ export default function AppLaunchPage() {
           </Card>
         </div>
 
-        {/* Live Photorealistic 3D Bedroom Preview inside the App */}
+        {/* Sample 3D apartment preview (public research scan until real scans replace it) */}
         <div className="xl:col-span-7 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
               <ShieldCheck className="h-4 w-4 text-sealed" />
-              <span>Live 3D Apartment Record · Drag slider to compare move-in vs move-out</span>
+              <span>Sample 3D apartment · drag the slider to compare move-in and move-out</span>
             </div>
             <Link
               href="/sample"
               className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
             >
-              Open full 3D walkthrough
+              See the sample apartment
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
