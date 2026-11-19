@@ -11,7 +11,7 @@ Keyprint is a renter-owned, tamper-evident 3D record of an apartment paired with
 
 ## Try It in Two Minutes
 
-1. Open **`/sample`** in an incognito window to explore a 3D apartment with move-in pins, the before/after time slider, AI suggestions, and the `$40` / `$160` split.
+1. Open **`/sample`** in an incognito window for an illustrative walkthrough: a public research scan of a real apartment with move-in pins, the before/after time slider, an example AI suggestion, and an example `$40` / `$160` split. (The sample's claims and split are scripted to show the flow; the real Arc lease is linked below.)
 2. Download both sample `.glb` files (original + 1-byte-changed copy) and drop them into **`/verify`**.
 3. Open **`/unit/new`** to seal a 3D scan and spatial pins in **Solo mode** with your own passkey (no landlord and no deposit required).
 
@@ -48,7 +48,7 @@ flowchart LR
 
   subgraph Server["Vercel Serverless + Supabase Private Storage"]
     SUPA["Supabase Private Bucket (50 MB)\n+ Postgres Metadata Index"]
-    CLAUDE["/api/analyze\nClaude Opus 5.5 Structured Diff"]
+    CLAUDE["/api/analyze\nVision AI Structured Diff\n(Gemini Flash / Claude Opus 5.5)"]
     KEEPER["/api/keeper/settle\nDeadline Keeper + Daily Cron"]
     UI -->|"Direct Signed PUT/GET"| SUPA
     UI -->|"Viewpoint Paths"| CLAUDE
@@ -65,15 +65,15 @@ flowchart LR
    - `KeyprintEscrow`: ownerless, non-upgradeable 6-decimal ERC-20 USDC (`0x3600000000000000000000000000000000000000`) escrow enforcing lease terms, evidence checks, claim windows, two-sided silence rules, reviewer dispute resolution, permissionless settlement, and non-blocking `owed[]` payouts.
 3. **Private Storage & Server Routes (Supabase + Vercel):**
    - 3D scans and photos live in a **private** Supabase Storage bucket (`keyprint-private`) uploaded directly from the browser via short-lived signed URLs (never public IPFS, never routed through Vercel's 4.5 MB limit).
-   - `/api/analyze` runs **Claude Opus 5.5** (`claude-opus-5-5`, `client.messages.parse` + `zodOutputFormat`) server-side with caching keyed by record IDs + view IDs + prompt version.
+   - `/api/analyze` runs structured vision comparison server-side (**Google Gemini Flash** via `GEMINI_API_KEY` or **Anthropic Claude Opus 5.5** via `ANTHROPIC_API_KEY`, validated with Zod) with Supabase caching keyed by record IDs + view IDs + prompt version.
    - `/api/keeper/settle` simulates and triggers permissionless `settle(leaseId)` once deadlines expire (backed by a daily Vercel Cron job).
 
 ---
 
 ## How Keyprint Uses Arc & Circle
 
-- **Circle Modular Wallets (`@circle-fin/modular-wallets-core` + `viem`):** Passkey-controlled smart accounts (`toPasskeyTransport`, `toWebAuthnCredential`, `toModularTransport(${clientUrl}/arcTestnet)`, `toCircleSmartAccount`) so renters sign in with Face ID or Windows Hello—never seeing seed phrases or `0x` strings on main screens.
-- **Gas Station Sponsorship (`paymaster: true`):** Every seal, co-sign, priced-pin claim, dispute, withdrawal, and settlement runs as a batched, gas-sponsored UserOperation on Arc Testnet.
+- **Circle Modular Wallets (`@circle-fin/modular-wallets-core` + `viem`):** Passkey-controlled smart accounts (`toPasskeyTransport`, `toWebAuthnCredential`, `toModularTransport(${clientUrl}/arcTestnet)`, `toCircleSmartAccount`) so renters sign in with Face ID or Windows Hello and never handle a seed phrase. Main screens talk in dollars; account IDs only appear where you share or paste them.
+- **Gas Station Sponsorship (`paymaster: true`):** Every passkey action (seal, co-sign, priced-pin claim, dispute, withdrawal, manual release) runs as a gas-sponsored UserOperation on Arc Testnet, batching several contract calls into one touch where a step needs them (for example seal move-in + pins + approve + fund). The deadline keeper's `settle()` is a plain transaction from Keyprint's keeper account.
 - **USDC Native & ERC-20 Model:** Deposits and payouts use the 6-decimal ERC-20 interface (`0x3600000000000000000000000000000000000000`), while Arc gas is metered in 18-decimal native USDC (measured from `actualGasCost` on UserOp receipts and never mixed with deposit units).
 
 ### Arc Testnet Contracts
@@ -84,9 +84,9 @@ flowchart LR
 | `KeyprintRegistry` | `0x57cF232F1e0c250d6bcA49Af6461ee477f450341` | [Arc Testnet Explorer](https://explorer.testnet.arc.io/address/0x57cF232F1e0c250d6bcA49Af6461ee477f450341) |
 | `KeyprintEscrow` (`MIN_WINDOW = 60s`) | `0x97d85aC09C01ed2dBf2611b7B91fF4BB2A69654a` | [Arc Testnet Explorer](https://explorer.testnet.arc.io/address/0x97d85aC09C01ed2dBf2611b7B91fF4BB2A69654a) |
 
-### Full Live Lease on Arc Testnet & Measured USDC Gas Cost
+### A Full Lease on Arc Testnet & Measured USDC Gas Cost
 
-An entire lease lifecycle on Arc Testnet (**12 transactions**: create, seal move-in, approve, fund, co-sign, seal move-out, end lease, seal claim evidence, file claim, close claims, accept, settle) cost **$0.032331 USDC** total in measured native gas fees:
+One complete lease lifecycle ran on Arc Testnet via `scripts/run-arc-verification.mjs`, from two plain test accounts (**12 transactions**: create, seal move-in, approve, fund, co-sign, seal move-out, end lease, seal claim evidence, file claim, close claims, accept, settle). In the app, several of these steps are batched into a single passkey touch. Measured native gas fees totaled **$0.031613 USDC**:
 
 - **Lease ID:** `0xb43bc65443fd2847b3c37b0fc08035c033a290ddf75707993649f44e1ea2f1a4`
 - **Co-Signed Move-In Record ID (verifiable live at `/verify`):** `0xf832a330403ee154d148051bccdd595d2e82d523142d8ae3dc4950d747818d50`
@@ -159,4 +159,4 @@ forge create src/KeyprintEscrow.sol:KeyprintEscrow \
 
 - **Built:** `KeyprintRegistry` and `KeyprintEscrow` smart contracts + full Foundry adversarial/fuzz/invariant suite, RFC 8785 manifest sealing & client-side `/verify`, 4-point Umeyama alignment + `three-mesh-bvh` surface agreement gate, dual-pass scissor time slider, offscreen 4:3 rendering + Claude Vision structured diff + geometric pin matching, settlement keeper, and all consumer screens.
 - **Used:** Scaniverse/Polycam for 3D reconstruction (with Meta AI's real-world **Replica Dataset** `apartment_1.glb` RGB-D/LiDAR apartment scan optimized and prepared as the built-in reference move-in/move-out pair — with a clearly disclosed staged floor spill & scan-frame offset on the move-out copy — alongside direct `.glb` import for any phone scan), Circle Modular Wallets + Gas Station on Arc, Supabase private Storage/Postgres, and Claude Opus 5.5.
-- **Honest limitations:** 3D reconstruction comes from an external scanning app (in-app capture with device attestation is next); the move-in review window, alignment gate, and priced-pin schema are enforced by the app while the contract enforces evidence existence, authorship, ordering, deadlines, and payouts; settlement requires a trigger (Keyprint's keeper or any caller); real production deployment requires state-by-state legal review of deposit custody and silence defaults.
+- **Honest limitations:** the built-in sample scans are Meta's Replica research scan (the move-out copy is the same scan with a synthetic frame offset and a staged stain), shown until our own phone LiDAR scans replace them; there is no server-side account login yet (every index write is checked against Arc, but anyone holding a lease link can open that lease's scans); 3D reconstruction comes from an external scanning app (in-app capture with device attestation is next); the move-in review window, alignment gate, and priced-pin schema are enforced by the app while the contract enforces evidence existence, authorship, ordering, deadlines, and payouts; settlement requires a trigger (Keyprint's keeper or any caller); real production deployment requires state-by-state legal review of deposit custody and silence defaults.

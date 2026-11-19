@@ -45,10 +45,13 @@ import {
 } from "@/lib/chain/arc";
 import {
   buildUnsealedRegistryCalls,
+  friendlyError,
   sendSponsoredCalls,
   type SealInput,
 } from "@/lib/chain/wallet";
 import { sha256Blob } from "@/lib/evidence/hash";
+import { countsAsMoveInPin } from "@/lib/evidence/pin-rules";
+import { saveRecordManifests } from "@/lib/evidence/record-store";
 import {
   canonicalizeAndHash,
   type AlignmentManifestV1,
@@ -58,12 +61,64 @@ import {
 } from "@/lib/evidence/manifest";
 import {
   REFERENCE_MOVE_IN_LANDMARKS,
-  REFERENCE_MOVE_IN_URL,
   REFERENCE_MOVE_OUT_LANDMARKS,
   REFERENCE_MOVE_OUT_URL,
 } from "@/lib/sample/reference";
 import { uploadToPrivateStorage } from "@/lib/supabase/upload";
 import { cn } from "@/lib/utils";
+
+interface SavedAlignmentMetrics {
+  medianGapMeters: number;
+  shareWithin5cm: number;
+  summaryText: string;
+  passedGate: boolean;
+  /** Identifies the exact move-out file this alignment was solved for. */
+  moveOutKey?: string;
+  scale?: number;
+  floorTiltDeg?: number;
+}
+
+/** Scale and floor tilt implied by a column-major similarity matrix. */
+function scaleAndTiltFromMatrix(m: number[]): { scale: number; floorTiltDeg: number } {
+  const scale = Math.hypot(m[0], m[1], m[2]);
+  const cos = Math.min(1, Math.max(-1, m[5] / (scale || 1)));
+  return { scale, floorTiltDeg: (Math.acos(cos) * 180) / Math.PI };
+}
+
+/**
+ * The change report sealed when this lease ended: a verified Report record naming the lease's
+ * own move-in and move-out records (earliest one wins; records arrive sorted by seal time).
+ */
+function findSealedReport(
+  records: ReadonlyArray<{ kind: number; manifest_json: string }>,
+  lease: { state: number; moveInRecordId: string; moveOutRecordId: string } | null,
+): ReportManifestV1 | null {
+  if (!lease || lease.state < 2) return null;
+  for (const r of records) {
+    if (r.kind !== RecordKind.Report) continue;
+    let m: ReportManifestV1;
+    try {
+      m = JSON.parse(r.manifest_json) as ReportManifestV1;
+    } catch {
+      continue;
+    }
+    if (
+      m.type === "keyprint.report.v1" &&
+      Array.isArray(m.changes) &&
+      String(m.moveInRecordId).toLowerCase() === lease.moveInRecordId.toLowerCase() &&
+      String(m.moveOutRecordId).toLowerCase() === lease.moveOutRecordId.toLowerCase()
+    ) {
+      return m;
+    }
+  }
+  return null;
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  possible_damage: "Possible damage",
+  possible_wear: "Possibly normal wear",
+  not_a_real_change: "Filtered artifact",
+};
 
 interface ReviewableChange extends DetectedChange {
   id: string;
@@ -106,59 +161,116 @@ export default function LeaseComparePage({
     nonce: number;
   } | null>(null);
 
-  const moveInUrl = live.signedUrls.moveInScan || REFERENCE_MOVE_IN_URL;
+  const moveInUrl = live.signedUrls.moveInScan || null;
   const effectiveMoveOutUrl =
     moveOutFile ? moveOutUrl : live.signedUrls.moveOutScan || moveOutUrl;
 
+  // Which exact move-out file is on screen. A saved alignment is reused only for the same file.
+  const currentMoveOutKey = moveOutFile
+    ? `file:${moveOutFile.name}:${moveOutFile.size}`
+    : live.meta?.move_out_scan_path
+      ? `path:${live.meta.move_out_scan_path}`
+      : `path:${REFERENCE_MOVE_OUT_URL}`;
+  const savedMetrics = (live.meta?.alignment_metrics ?? null) as SavedAlignmentMetrics | null;
+  const savedAlignmentUsable =
+    !alignment &&
+    Boolean(live.meta?.alignment_matrix?.length === 16) &&
+    savedMetrics?.moveOutKey === currentMoveOutKey;
+
+  // After the lease ends, the sealed Alignment record (verified against Arc) is the source of truth.
+  const sealedAlignment = useMemo(() => {
+    const lease = live.lease;
+    if (!lease || lease.state < 2) return null;
+    for (const r of live.records) {
+      if (r.kind !== RecordKind.Alignment) continue;
+      try {
+        const m = JSON.parse(r.manifest_json) as AlignmentManifestV1;
+        if (
+          m.type === "keyprint.alignment.v1" &&
+          m.matrix?.length === 16 &&
+          m.moveInRecordId.toLowerCase() === lease.moveInRecordId.toLowerCase() &&
+          m.moveOutRecordId.toLowerCase() === lease.moveOutRecordId.toLowerCase()
+        ) {
+          return m;
+        }
+      } catch {
+        // ignore unparsable rows
+      }
+    }
+    return null;
+  }, [live.records, live.lease]);
+
   const activeMatrix =
-    alignment?.umeyama.matrix4ColumnMajor ?? live.meta?.alignment_matrix ?? null;
+    alignment?.umeyama.matrix4ColumnMajor ??
+    sealedAlignment?.matrix ??
+    (savedAlignmentUsable ? live.meta!.alignment_matrix : null);
   const alignmentPassed =
-    alignment?.agreement.passedGate ?? live.meta?.alignment_metrics?.passedGate ?? false;
+    alignment?.agreement.passedGate ??
+    (sealedAlignment ? true : savedAlignmentUsable ? Boolean(savedMetrics?.passedGate) : false);
   const alignmentSummary =
-    alignment?.agreement.summaryText ?? live.meta?.alignment_metrics?.summaryText ?? null;
+    alignment?.agreement.summaryText ??
+    (sealedAlignment
+      ? `Sealed line-up: half the room within ${(sealedAlignment.medianGapMeters * 100).toFixed(1)} cm; ${Math.round(sealedAlignment.shareWithin5cm * 100)}% within 5 cm`
+      : savedAlignmentUsable
+        ? savedMetrics?.summaryText ?? null
+        : null);
+
+  const moveInCreatedAt = useMemo(() => {
+    if (!live.lease) return null;
+    const row = live.records.find(
+      (r) => r.record_id.toLowerCase() === live.lease!.moveInRecordId.toLowerCase(),
+    );
+    return row?.chain_created_at ?? null;
+  }, [live.records, live.lease]);
 
   const moveInPins: MoveInPinRef[] = useMemo(() => {
     return live.records
       .filter((r) => r.kind === RecordKind.Pin)
-      .map((r) => {
+      .map((r): MoveInPinRef | null => {
         try {
           const m = JSON.parse(r.manifest_json) as PinManifestV1;
-          const sealedSec = Math.floor(new Date(r.sealed_at).getTime() / 1000);
           const coSigned = (live.coSignedMap[r.record_id.toLowerCase()] || 0) > 0;
-          const inWindow =
-            live.lease && live.lease.fundedAt > 0
-              ? sealedSec <= live.lease.fundedAt + live.lease.reviewWindow
-              : true;
           return {
             id: r.record_id,
             position: m.position,
-            sealedAt: sealedSec,
+            normal: m.normal,
+            sealedAt: r.chain_created_at ?? 0,
             coSigned,
             text: m.text,
-            countsAsMoveIn: Boolean(coSigned || inWindow),
+            countsAsMoveIn: countsAsMoveInPin({
+              pinAuthor: r.author,
+              pinCreatedAt: r.chain_created_at,
+              coSignedByLandlord: coSigned,
+              lease: live.lease,
+              moveInCreatedAt,
+            }),
           };
         } catch {
           return null;
         }
       })
       .filter((x): x is MoveInPinRef => x !== null);
-  }, [live.records, live.coSignedMap, live.lease]);
+  }, [live.records, live.coSignedMap, live.lease, moveInCreatedAt]);
 
-  // Persist alignment locally to Supabase cache when solved so stage demo loads instantly
+  // Persist a passing alignment (with the move-out file it belongs to) so a reload can reuse it.
   const handleAligned = async (output: AlignmentOutput) => {
     setAlignment(output);
     if (output.agreement.passedGate) {
+      const metrics: SavedAlignmentMetrics = {
+        medianGapMeters: output.agreement.medianGapMeters,
+        shareWithin5cm: output.agreement.shareWithin5cm,
+        summaryText: output.agreement.summaryText,
+        passedGate: output.agreement.passedGate,
+        moveOutKey: currentMoveOutKey,
+        scale: output.umeyama.scale,
+        floorTiltDeg: output.umeyama.floorTiltDeg,
+      };
       await fetch(`/api/leases/${encodeURIComponent(leaseId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           alignment_matrix: output.umeyama.matrix4ColumnMajor,
-          alignment_metrics: {
-            medianGapMeters: output.agreement.medianGapMeters,
-            shareWithin5cm: output.agreement.shareWithin5cm,
-            summaryText: output.agreement.summaryText,
-            passedGate: output.agreement.passedGate,
-          },
+          alignment_metrics: metrics,
         }),
       }).catch(() => null);
     }
@@ -170,16 +282,32 @@ export default function LeaseComparePage({
       setError("Pass the 4-point surface-agreement alignment gate first.");
       return;
     }
+    if (!moveInUrl || !live.lease) {
+      setError("The move-in scan for this lease isn't available yet.");
+      return;
+    }
     setError(null);
     setBusy("Rendering matching 4:3 before & after viewpoints…");
 
     try {
+      // Only move-in pins (sealed in the review window, or co-signed) are shown to the matcher.
+      const eligiblePins = moveInPins.filter((p) => p.countsAsMoveIn);
       const { pairs, raycastBox } = await renderBeforeAfterPairs({
         moveInUrl,
         moveOutUrl: effectiveMoveOutUrl,
         alignmentMatrix: activeMatrix,
-        moveInPins,
+        moveInPins: eligiblePins,
       });
+
+      // Cache identity: sealed record ids once they exist; before move-out is sealed, the
+      // move-out file's own fingerprint, so a different scan can never reuse a stale report.
+      const zeroId = /^0x0{64}$/i;
+      let moveOutKeyForCache = live.lease.moveOutRecordId;
+      if (zeroId.test(moveOutKeyForCache)) {
+        setBusy("Fingerprinting move-out scan…");
+        const outBlob = moveOutFile ?? (await (await fetch(effectiveMoveOutUrl)).blob());
+        moveOutKeyForCache = `sha256:${await sha256Blob(outBlob)}` as Hex;
+      }
 
       setBusy(`Uploading ${pairs.length} render pairs for comparison…`);
       const uploadedPairs = await Promise.all(
@@ -217,27 +345,34 @@ export default function LeaseComparePage({
         }),
       );
 
-      setBusy("Comparing views with Claude Opus 5.5…");
+      setBusy("Comparing views with AI…");
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leaseId,
-          moveInRecordId: live.lease?.moveInRecordId || "move-in",
-          moveOutRecordId: live.lease?.moveOutRecordId || moveOutName,
+          moveInRecordId: live.lease.moveInRecordId,
+          moveOutRecordId: moveOutKeyForCache,
           pairs: uploadedPairs,
           forceRefresh,
         }),
       });
-      const data = (await res.json()) as {
+      const data = (await res.json().catch(() => ({}))) as {
         source?: string;
+        model?: string;
         promptVersion?: string;
         report?: { changes: DetectedChange[] } | null;
         note?: string;
         error?: string;
       };
+      if (!res.ok && !data.report) {
+        setError("The AI comparison isn't available right now. You can still add changes manually below.");
+        return;
+      }
 
-      setAiSource(data.source || "manual-fallback");
+      setAiSource(
+        data.model ? `${data.source} (${data.model})` : data.source || "manual-fallback",
+      );
       if (data.promptVersion) setPromptVersion(data.promptVersion);
       setViewIds(pairs.map((p) => p.viewId));
 
@@ -272,11 +407,7 @@ export default function LeaseComparePage({
         })),
       );
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Comparison failed; you can still add changes manually.",
-      );
+      setError(friendlyError(err, "Comparison failed; you can still add changes manually."));
     } finally {
       setBusy(null);
     }
@@ -352,6 +483,22 @@ export default function LeaseComparePage({
         ]);
       const moveOutRecordId = outIds[0];
 
+      // Seal only measurements that were actually taken for this move-out file.
+      const measured = alignment
+        ? {
+            medianGapMeters: alignment.agreement.medianGapMeters,
+            shareWithin5cm: alignment.agreement.shareWithin5cm,
+          }
+        : savedAlignmentUsable && savedMetrics
+          ? {
+              medianGapMeters: savedMetrics.medianGapMeters,
+              shareWithin5cm: savedMetrics.shareWithin5cm,
+            }
+          : null;
+      if (!measured) {
+        throw new Error("Line up the scans again before ending the lease, so real measurements are sealed.");
+      }
+      const derived = scaleAndTiltFromMatrix(activeMatrix);
       const alignManifest: AlignmentManifestV1 = {
         type: "keyprint.alignment.v1",
         leaseId: leaseId as Hex,
@@ -359,16 +506,10 @@ export default function LeaseComparePage({
         moveOutRecordId,
         label: "maps move-out coordinates to move-in coordinates",
         matrix: activeMatrix,
-        scale: alignment?.umeyama.scale ?? 1,
-        floorTiltDeg: alignment?.umeyama.floorTiltDeg ?? 0,
-        medianGapMeters:
-          alignment?.agreement.medianGapMeters ??
-          live.meta?.alignment_metrics?.medianGapMeters ??
-          0,
-        shareWithin5cm:
-          alignment?.agreement.shareWithin5cm ??
-          live.meta?.alignment_metrics?.shareWithin5cm ??
-          1,
+        scale: alignment?.umeyama.scale ?? derived.scale,
+        floorTiltDeg: alignment?.umeyama.floorTiltDeg ?? derived.floorTiltDeg,
+        medianGapMeters: measured.medianGapMeters,
+        shareWithin5cm: measured.shareWithin5cm,
       };
       const alignCanon = await canonicalizeAndHash(alignManifest);
 
@@ -381,9 +522,10 @@ export default function LeaseComparePage({
         },
       ];
 
+      // Seal every suggestion, including dismissed ones, with who produced it and what
+      // people decided, so the sealed report shows exactly what the AI said.
       let reportCanon: Awaited<ReturnType<typeof canonicalizeAndHash>> | null = null;
-      const keptChanges = changes.filter((c) => c.reviewState !== "dismissed");
-      if (keptChanges.length > 0) {
+      if (changes.length > 0) {
         const reportManifest: ReportManifestV1 = {
           type: "keyprint.report.v1",
           leaseId: leaseId as Hex,
@@ -391,7 +533,8 @@ export default function LeaseComparePage({
           moveOutRecordId,
           promptVersion,
           viewIds,
-          changes: keptChanges.map((c) => ({
+          source: aiSource ?? "manual",
+          changes: changes.map((c) => ({
             view_id: c.view_id,
             box: c.box,
             title: c.title,
@@ -400,6 +543,8 @@ export default function LeaseComparePage({
             confidence: c.confidence,
             worldPosition: c.worldPosition,
             matchedMoveInPinId: c.matchedMoveInPin?.id ?? null,
+            origin: c.manual ? ("manual" as const) : ("ai" as const),
+            reviewState: c.reviewState,
           })),
         };
         reportCanon = await canonicalizeAndHash(reportManifest);
@@ -426,63 +571,40 @@ export default function LeaseComparePage({
       };
 
       setBusy("Confirm with one touch to seal move-out & end lease…");
-      const op = await sendSponsoredCalls(session, [
-        ...outCalls,
-        ...extraSealCalls,
-        endLeaseCall,
-      ]);
+      const op = await sendSponsoredCalls(
+        session,
+        [...outCalls, ...extraSealCalls, endLeaseCall],
+        { onSubmitted: () => setBusy("Sealing on Arc…") },
+      );
 
-      // Persist manifests
-      await Promise.all([
-        fetch("/api/records", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+      // Persist manifests (with a local backup and retries; see record-store).
+      const [failedSaves] = await Promise.all([
+        saveRecordManifests([
+          {
             record_id: moveOutRecordId,
-            unit_id: unitId,
             lease_id: leaseId,
-            kind: RecordKind.MoveOutScan,
-            content_hash: outCanon.contentHash,
-            author: session.address,
             manifest_json: outCanon.canonicalJson,
             file_paths: [scanPath],
             tx_hash: op.txHash,
-            block_number: Number(op.blockNumber),
             gas_cost_wei: op.actualGasCost.toString(),
-          }),
-        }),
-        fetch("/api/records", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+          },
+          {
             record_id: alignmentRecordId,
-            unit_id: unitId,
             lease_id: leaseId,
-            kind: RecordKind.Alignment,
-            content_hash: alignCanon.contentHash,
-            author: session.address,
             manifest_json: alignCanon.canonicalJson,
             tx_hash: op.txHash,
-            block_number: Number(op.blockNumber),
-          }),
-        }),
-        reportCanon && reportRecordId
-          ? fetch("/api/records", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                record_id: reportRecordId,
-                unit_id: unitId,
-                lease_id: leaseId,
-                kind: RecordKind.Report,
-                content_hash: reportCanon.contentHash,
-                author: session.address,
-                manifest_json: reportCanon.canonicalJson,
-                tx_hash: op.txHash,
-                block_number: Number(op.blockNumber),
-              }),
-            })
-          : Promise.resolve(),
+          },
+          ...(reportCanon && reportRecordId
+            ? [
+                {
+                  record_id: reportRecordId,
+                  lease_id: leaseId,
+                  manifest_json: reportCanon.canonicalJson,
+                  tx_hash: op.txHash,
+                },
+              ]
+            : []),
+        ]),
         fetch(`/api/leases/${encodeURIComponent(leaseId)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -496,12 +618,17 @@ export default function LeaseComparePage({
             add_gas_cost_wei: op.actualGasCost.toString(),
             add_tx_count: 1,
           }),
-        }),
-      ]).catch(() => null);
+        }).catch(() => null),
+      ]);
+      if (failedSaves > 0) {
+        setError(
+          "Move-out is sealed on Arc, but some details haven't reached Keyprint's index yet. This page will retry next time it opens.",
+        );
+      }
 
       await live.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "End lease failed.");
+      setError(friendlyError(err, "Ending the lease didn't go through. Nothing was sent."));
     } finally {
       setBusy(null);
     }
@@ -534,20 +661,47 @@ export default function LeaseComparePage({
   ];
 
   const leaseEnded = (live.lease?.state ?? 0) >= 2;
+  const sealedReport = findSealedReport(live.records, live.lease);
+  const moveOutSealedAt = live.lease
+    ? live.records.find(
+        (r) => r.record_id.toLowerCase() === live.lease!.moveOutRecordId.toLowerCase(),
+      )?.sealed_at
+    : undefined;
+  const claimWindowOpen =
+    live.lease?.state === 2 &&
+    !live.lease.claimsClosed &&
+    live.chainNowSec <= live.lease.endedAt + live.lease.claimWindow;
+  const endedSubtitle =
+    live.lease?.state === 3
+      ? "The deposit has been settled. The receipt is on the Settle tab."
+      : claimWindowOpen
+        ? "The landlord's claim window is open. Every dollar claimed needs a priced pin."
+        : "The claim window has closed. Settlement runs once every claim is final.";
 
   return (
     <LeaseShell leaseId={leaseId} live={live}>
       <div className="space-y-6">
         {leaseEnded && (
           <SealAnimation
-            title="Move-out scan and alignment sealed · Lease ended"
-            subtitle="The landlord's claim window is now open. Every dollar claimed requires a priced pin."
+            title={
+              sealedAlignment
+                ? "Move-out scan and alignment sealed · Lease ended"
+                : "Move-out scan sealed · Lease ended"
+            }
+            subtitle={endedSubtitle}
+            sealedAtIso={moveOutSealedAt}
             recordId={live.lease?.moveOutRecordId}
           />
         )}
 
+        {!moveInUrl && !live.loading && (
+          <div className="rounded-2xl border border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+            The move-in scan for this lease isn&apos;t available yet, so there&apos;s nothing to compare against.
+          </div>
+        )}
+
         {/* Hero Time Slider (shown once alignment passes) */}
-        {activeMatrix && alignmentPassed && (
+        {moveInUrl && activeMatrix && alignmentPassed && (
           <Card>
             <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
@@ -600,255 +754,339 @@ export default function LeaseComparePage({
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Sparkles className="h-4 w-4 text-suggestion" />
-                Change suggestions
+                {leaseEnded ? "Sealed change report" : "Change suggestions"}
               </CardTitle>
               <CardDescription>
-                AI compares matched before-and-after views and suggests physical changes. It never prices anything; people decide what is chargeable.
+                {leaseEnded
+                  ? "Sealed on Arc when the lease ended, including what people confirmed or dismissed. AI never prices anything."
+                  : "AI compares matched before-and-after views and suggests physical changes. It never prices anything; people decide what is chargeable."}
               </CardDescription>
             </div>
 
-            <div className="flex items-center gap-2">
-              {filteredCount > 0 && (
+            {!leaseEnded && (
+              <div className="flex items-center gap-2">
+                {filteredCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowFiltered((v) => !v)}
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    {showFiltered
+                      ? "Hide filtered"
+                      : `Show filtered (${filteredCount})`}
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  variant="ghost"
-                  onClick={() => setShowFiltered((v) => !v)}
+                  disabled={!alignmentPassed || busy !== null}
+                  onClick={() => handleRunAiCompare(false)}
                 >
-                  <Eye className="h-3.5 w-3.5" />
-                  {showFiltered
-                    ? "Hide filtered"
-                    : `Show filtered (${filteredCount})`}
-                </Button>
-              )}
-              <Button
-                size="sm"
-                disabled={!alignmentPassed || busy !== null}
-                onClick={() => handleRunAiCompare(false)}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                {busy && busy.includes("Claude")
+                  <Sparkles className="h-3.5 w-3.5" />
+                {busy && busy.includes("AI")
                   ? "Comparing…"
                   : "Run AI comparison"}
-              </Button>
-            </div>
+                </Button>
+              </div>
+            )}
           </CardHeader>
 
-          <CardContent className="space-y-4">
-            {!alignmentPassed && (
-              <p className="text-xs text-muted-foreground">
-                Complete the 4-point alignment below and pass the surface-agreement gate to unlock AI comparison.
-              </p>
-            )}
-
-            {error && (
-              <div className="rounded-xl border border-claim/30 bg-claim/10 px-4 py-2.5 text-xs text-claim">
-                {error}
-              </div>
-            )}
-
-            {aiSource && (
-              <div className="text-xs text-muted-foreground">
-                Report source: <span className="font-medium text-foreground">{aiSource}</span>
-              </div>
-            )}
-
-            {visibleChanges.length > 0 && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {visibleChanges.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl border border-border bg-muted/30 p-4 space-y-2.5"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                          <Badge variant="suggestion">
-                            {item.manual ? "Added manually" : "AI suggestion"}
-                          </Badge>
-                          <Badge
-                            variant={
-                              item.category === "possible_damage"
-                                ? "claim"
-                                : "default"
+          {leaseEnded ? (
+            <CardContent className="space-y-3">
+              {!sealedReport ? (
+                <p className="text-xs text-muted-foreground">
+                  No change report was sealed for this lease.
+                </p>
+              ) : sealedReport.changes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  The sealed report lists no changes.
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {sealedReport.changes.map((item, i) => (
+                    <div
+                      key={`${item.view_id}-${i}`}
+                      className={cn(
+                        "rounded-xl border border-border bg-muted/30 p-4 space-y-2",
+                        item.reviewState === "dismissed" && "opacity-60",
+                      )}
+                    >
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant="suggestion">
+                          {item.origin === "manual" ? "Added manually" : "AI suggestion"}
+                        </Badge>
+                        <Badge variant={item.category === "possible_damage" ? "suggestion" : "default"}>
+                          {CATEGORY_LABEL[item.category] ?? item.category}
+                        </Badge>
+                        <Badge variant={item.reviewState === "confirmed" ? "sealed" : "default"}>
+                          {item.reviewState === "confirmed"
+                            ? "Confirmed"
+                            : item.reviewState === "dismissed"
+                              ? "Dismissed"
+                              : "Not reviewed"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="font-semibold text-sm">{item.title}</h4>
+                        {item.worldPosition && activeMatrix && alignmentPassed && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setFlyTo({ position: item.worldPosition!, nonce: Date.now() })
                             }
                           >
-                            {item.category === "possible_damage"
-                              ? "Possible damage"
-                              : item.category === "possible_wear"
-                                ? "Possibly normal wear"
-                                : "Filtered artifact"}
-                          </Badge>
+                            Focus
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {item.description}
+                      </p>
+                      {item.matchedMoveInPinId && (
+                        <p className="text-xs font-medium text-sealed">Matches a move-in pin.</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          ) : (
+            <CardContent className="space-y-4">
+              {!alignmentPassed && (
+                <p className="text-xs text-muted-foreground">
+                  Complete the 4-point alignment below and pass the surface-agreement gate to unlock AI comparison.
+                </p>
+              )}
+
+              {error && (
+                <div className="rounded-xl border border-claim/30 bg-claim/10 px-4 py-2.5 text-xs text-claim">
+                  {error}
+                </div>
+              )}
+
+              {aiSource && (
+                <div className="text-xs text-muted-foreground">
+                  {aiSource === "live"
+                    ? "Fresh AI run on these scans."
+                    : aiSource.startsWith("cache")
+                      ? "From an earlier AI run on these exact scans."
+                      : "AI wasn't available; add changes by hand below."}
+                </div>
+              )}
+
+              {visibleChanges.length > 0 && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {visibleChanges.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-border bg-muted/30 p-4 space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                            <Badge variant="suggestion">
+                              {item.manual ? "Added manually" : "AI suggestion"}
+                            </Badge>
+                            <Badge
+                              variant={
+                                item.category === "possible_damage"
+                                  ? "suggestion"
+                                  : "default"
+                              }
+                            >
+                              {item.category === "possible_damage"
+                                ? "Possible damage"
+                                : item.category === "possible_wear"
+                                  ? "Possibly normal wear"
+                                  : "Filtered artifact"}
+                            </Badge>
+                          </div>
+                          <h4 className="font-semibold text-sm">{item.title}</h4>
                         </div>
-                        <h4 className="font-semibold text-sm">{item.title}</h4>
+
+                        {item.worldPosition && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setFlyTo({
+                                position: item.worldPosition!,
+                                nonce: Date.now(),
+                              })
+                            }
+                          >
+                            Focus
+                          </Button>
+                        )}
                       </div>
 
-                      {item.worldPosition && (
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {item.description}
+                      </p>
+
+                      {item.matchedMoveInPin && (
+                        <div className="rounded-lg border border-sealed/30 bg-sealed/5 px-3 py-2 text-xs text-sealed font-medium">
+                          Matches a move-in pin (&ldquo;{item.matchedMoveInPin.text}&rdquo;)
+                          {item.matchedMoveInPin.coSigned
+                            ? ", co-signed by your landlord."
+                            : "."}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          variant={
+                            item.reviewState === "confirmed" ? "default" : "secondary"
+                          }
+                          onClick={() =>
+                            setChanges((prev) =>
+                              prev.map((c) =>
+                                c.id === item.id
+                                  ? { ...c, reviewState: "confirmed" }
+                                  : c,
+                              ),
+                            )
+                          }
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          Looks right
+                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() =>
-                            setFlyTo({
-                              position: item.worldPosition!,
-                              nonce: Date.now(),
-                            })
+                            setChanges((prev) =>
+                              prev.map((c) =>
+                                c.id === item.id
+                                  ? { ...c, reviewState: "dismissed" }
+                                  : c,
+                              ),
+                            )
                           }
                         >
-                          Focus
+                          <X className="h-3.5 w-3.5" />
+                          Dismiss
                         </Button>
-                      )}
-                    </div>
-
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      {item.description}
-                    </p>
-
-                    {item.matchedMoveInPin && (
-                      <div className="rounded-lg border border-sealed/30 bg-sealed/5 px-3 py-2 text-xs text-sealed font-medium">
-                        Matches a move-in pin (&ldquo;{item.matchedMoveInPin.text}&rdquo;)
-                        {item.matchedMoveInPin.coSigned
-                          ? ", co-signed by your landlord."
-                          : "."}
                       </div>
-                    )}
-
-                    <div className="flex items-center gap-2 pt-1">
-                      <Button
-                        size="sm"
-                        variant={
-                          item.reviewState === "confirmed" ? "default" : "secondary"
-                        }
-                        onClick={() =>
-                          setChanges((prev) =>
-                            prev.map((c) =>
-                              c.id === item.id
-                                ? { ...c, reviewState: "confirmed" }
-                                : c,
-                            ),
-                          )
-                        }
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                        Looks right
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          setChanges((prev) =>
-                            prev.map((c) =>
-                              c.id === item.id
-                                ? { ...c, reviewState: "dismissed" }
-                                : c,
-                            ),
-                          )
-                        }
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Dismiss
-                      </Button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
 
-            {/* Manual "Add change" fallback */}
-            <div className="pt-2 border-t border-border flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={manualTitle}
-                onChange={(e) => setManualTitle(e.target.value)}
-                placeholder="Add a change manually (e.g. Dark stain on carpet)"
-                className="flex-1 h-10 rounded-lg border border-border bg-background px-3 text-sm"
-              />
-              <select
-                value={manualCategory}
-                onChange={(e) =>
-                  setManualCategory(
-                    e.target.value as "possible_damage" | "possible_wear",
-                  )
-                }
-                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-              >
-                <option value="possible_damage">Possible damage</option>
-                <option value="possible_wear">Possibly normal wear</option>
-              </select>
-              <Button
-                variant="secondary"
-                disabled={!manualTitle.trim()}
-                onClick={() => {
-                  setChanges((prev) => [
-                    ...prev,
-                    {
-                      id: `manual-${Date.now()}`,
-                      view_id: "manual",
-                      box: { x: 0, y: 0, w: 0, h: 0 },
-                      title: manualTitle.trim(),
-                      description: "Added manually by a lease party for review.",
-                      category: manualCategory,
-                      confidence: "high",
-                      reviewState: "confirmed",
-                      manual: true,
-                    },
-                  ]);
-                  setManualTitle("");
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Add change
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Move-out Scan Import & 4-Point Alignment */}
-        <Card>
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <CardTitle className="text-base">
-                Line up the move-out scan (4-point alignment)
-              </CardTitle>
-              <CardDescription>
-                Move-out file: {moveOutName}. Tap 4 matching spots on two walls so both scans line up to within 2 cm.
-              </CardDescription>
-            </div>
-
-            <label className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium cursor-pointer hover:bg-muted">
-              <Upload className="h-3.5 w-3.5" />
-              Import move-out .glb
-              <input
-                type="file"
-                accept=".glb,model/gltf-binary"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) {
-                    setMoveOutFile(f);
-                    setMoveOutName(f.name);
-                    setMoveOutUrl(URL.createObjectURL(f));
-                    setUsingReferenceOut(false);
-                    setAlignment(null);
+              {/* Manual "Add change" fallback */}
+              <div className="pt-2 border-t border-border flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={manualTitle}
+                  onChange={(e) => setManualTitle(e.target.value)}
+                  placeholder="Add a change manually (e.g. Dark stain on carpet)"
+                  className="flex-1 h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                />
+                <select
+                  value={manualCategory}
+                  onChange={(e) =>
+                    setManualCategory(
+                      e.target.value as "possible_damage" | "possible_wear",
+                    )
                   }
-                }}
-              />
-            </label>
-          </CardHeader>
-          <CardContent>
-            <AlignmentTool
-              moveInUrl={moveInUrl}
-              moveOutUrl={effectiveMoveOutUrl}
-              onAligned={handleAligned}
-              presetLandmarks={
-                usingReferenceOut
-                  ? {
-                      moveIn: REFERENCE_MOVE_IN_LANDMARKS,
-                      moveOut: REFERENCE_MOVE_OUT_LANDMARKS,
-                    }
-                  : undefined
-              }
-            />
-          </CardContent>
+                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                >
+                  <option value="possible_damage">Possible damage</option>
+                  <option value="possible_wear">Possibly normal wear</option>
+                </select>
+                <Button
+                  variant="secondary"
+                  disabled={!manualTitle.trim()}
+                  onClick={() => {
+                    setChanges((prev) => [
+                      ...prev,
+                      {
+                        id: `manual-${Date.now()}`,
+                        view_id: "manual",
+                        box: { x: 0, y: 0, w: 0, h: 0 },
+                        title: manualTitle.trim(),
+                        description: "Added manually by a lease party for review.",
+                        category: manualCategory,
+                        confidence: "high",
+                        reviewState: "confirmed",
+                        manual: true,
+                      },
+                    ]);
+                    setManualTitle("");
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add change
+                </Button>
+              </div>
+            </CardContent>
+          )}
         </Card>
+
+        {leaseEnded && !sealedAlignment && (
+          <p className="text-xs text-muted-foreground">
+            No sealed line-up for this lease is in Keyprint&apos;s index, so the before/after view
+            isn&apos;t shown here.
+          </p>
+        )}
+
+        {/* Move-out Scan Import & 4-Point Alignment (only before the lease ends) */}
+        {!leaseEnded && (
+          <Card>
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">
+                  Line up the move-out scan (4-point alignment)
+                </CardTitle>
+                <CardDescription>
+                  Move-out file: {moveOutName}. Tap 4 matching spots on two walls so both scans line up to within 2 cm.
+                </CardDescription>
+              </div>
+
+              <label className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium cursor-pointer hover:bg-muted">
+                <Upload className="h-3.5 w-3.5" />
+                Import move-out .glb
+                <input
+                  type="file"
+                  accept=".glb,model/gltf-binary"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setMoveOutFile(f);
+                      setMoveOutName(f.name);
+                      setMoveOutUrl(URL.createObjectURL(f));
+                      setUsingReferenceOut(false);
+                      setAlignment(null);
+                    }
+                  }}
+                />
+              </label>
+            </CardHeader>
+            <CardContent>
+              {moveInUrl ? (
+                <AlignmentTool
+                  moveInUrl={moveInUrl}
+                  moveOutUrl={effectiveMoveOutUrl}
+                  onAligned={handleAligned}
+                  presetLandmarks={
+                    // Saved demo points only fit the bundled placeholder pair.
+                    usingReferenceOut && moveInUrl.startsWith("/models/")
+                      ? {
+                          moveIn: REFERENCE_MOVE_IN_LANDMARKS,
+                          moveOut: REFERENCE_MOVE_OUT_LANDMARKS,
+                        }
+                      : undefined
+                  }
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">Waiting for the move-in scan…</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </LeaseShell>
   );

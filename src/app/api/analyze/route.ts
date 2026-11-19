@@ -12,7 +12,12 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase/server";
 
-export const maxDuration = 300; // Vercel Hobby Fluid Compute max
+export const maxDuration = 300; // seconds; the Claude call itself times out at 240 s
+
+const HEX32 = /^0x[0-9a-f]{64}$/;
+const MOVE_OUT_KEY = /^(0x[0-9a-f]{64}|sha256:[0-9a-f]{64})$/;
+const VIEW_ID = /^[a-z0-9:_-]{1,90}$/i;
+const MAX_INLINE_BASE64_CHARS = 3_500_000; // keep inline fallbacks under Vercel's 4.5 MB body cap
 
 interface AnalyzePairRequest {
   viewId: string;
@@ -23,20 +28,33 @@ interface AnalyzePairRequest {
   afterBase64?: string;
 }
 
+function bad(status: number, error: string) {
+  return NextResponse.json({ source: "manual-fallback", report: null, error }, { status });
+}
+
 async function loadImageBase64(
+  leaseId: string,
   storagePath?: string,
   inlineBase64?: string,
 ): Promise<string> {
-  if (storagePath && isSupabaseConfigured()) {
+  if (storagePath) {
+    // Only this lease's own render folder may be read.
+    const prefix = `leases/${leaseId}/renders/`;
+    if (
+      !isSupabaseConfigured() ||
+      storagePath.includes("..") ||
+      !storagePath.toLowerCase().startsWith(prefix)
+    ) {
+      throw new Error("Render path is not allowed.");
+    }
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.storage
       .from(DEFAULT_STORAGE_BUCKET)
       .download(storagePath);
     if (error || !data) {
-      throw new Error(`Could not download render from storage: ${storagePath}`);
+      throw new Error("A render could not be read from storage.");
     }
-    const buf = Buffer.from(await data.arrayBuffer());
-    return buf.toString("base64");
+    return Buffer.from(await data.arrayBuffer()).toString("base64");
   }
   if (inlineBase64) {
     return inlineBase64.replace(/^data:image\/\w+;base64,/, "");
@@ -45,30 +63,46 @@ async function loadImageBase64(
 }
 
 export async function POST(req: NextRequest) {
+  let body: {
+    leaseId?: string;
+    moveInRecordId?: string;
+    moveOutRecordId?: string;
+    pairs?: AnalyzePairRequest[];
+    forceRefresh?: boolean;
+  };
   try {
-    const body = (await req.json()) as {
-      leaseId?: string;
-      moveInRecordId?: string;
-      moveOutRecordId?: string;
-      pairs?: AnalyzePairRequest[];
-      forceRefresh?: boolean;
-    };
+    body = await req.json();
+  } catch {
+    return bad(400, "Invalid request.");
+  }
 
-    const leaseId = (body.leaseId || "solo").toLowerCase();
-    const moveInRecordId = (body.moveInRecordId || "move-in").toLowerCase();
-    const moveOutRecordId = (body.moveOutRecordId || "move-out").toLowerCase();
-    const rawPairs = body.pairs ?? [];
+  const leaseId = String(body.leaseId ?? "").toLowerCase();
+  const moveInRecordId = String(body.moveInRecordId ?? "").toLowerCase();
+  const moveOutRecordId = String(body.moveOutRecordId ?? "").toLowerCase();
+  const rawPairs = Array.isArray(body.pairs) ? body.pairs : [];
 
-    if (rawPairs.length === 0 || rawPairs.length > 12) {
-      return NextResponse.json(
-        { error: "Provide between 1 and 12 render viewpoint pairs." },
-        { status: 400 },
-      );
-    }
+  if (!HEX32.test(leaseId) || !HEX32.test(moveInRecordId) || !MOVE_OUT_KEY.test(moveOutRecordId)) {
+    return bad(400, "A lease id, a move-in record id and a move-out record id or fingerprint are required.");
+  }
+  if (rawPairs.length === 0 || rawPairs.length > 12) {
+    return bad(400, "Provide between 1 and 12 render viewpoint pairs.");
+  }
+  if (rawPairs.some((p) => !VIEW_ID.test(String(p.viewId ?? "")))) {
+    return bad(400, "Invalid view id.");
+  }
+  const inlineChars = rawPairs.reduce(
+    (n, p) => n + (p.beforeBase64?.length ?? 0) + (p.afterBase64?.length ?? 0),
+    0,
+  );
+  if (inlineChars > MAX_INLINE_BASE64_CHARS) {
+    return bad(413, "Too much image data in one request. Upload renders to storage first.");
+  }
 
-    // Cache key uses record IDs + view IDs + prompt version (never image bytes)
+  try {
+    // Cache identity: lease + both sealed records (or the move-out file's fingerprint)
+    // + views + prompt version. Never image bytes, so a live re-alignment still hits.
     const viewIds = rawPairs.map((p) => p.viewId).sort();
-    const cacheKey = `${moveInRecordId}:${moveOutRecordId}:${viewIds.join(",")}:${AI_PROMPT_VERSION}`;
+    const cacheKey = `${leaseId}:${moveInRecordId}:${moveOutRecordId}:${viewIds.join(",")}:${AI_PROMPT_VERSION}`;
 
     let cachedReport: ChangeReportOutput | null = null;
     if (isSupabaseConfigured()) {
@@ -96,21 +130,25 @@ export async function POST(req: NextRequest) {
       rawPairs.map(async (p) => ({
         viewId: p.viewId,
         pins: Array.isArray(p.pins)
-          ? p.pins.map((pin) => ({
-              id: String(pin.id),
-              x: Math.round(Number(pin.x)),
-              y: Math.round(Number(pin.y)),
-            }))
+          ? p.pins
+              .filter((pin) => Number.isFinite(Number(pin.x)) && Number.isFinite(Number(pin.y)))
+              .slice(0, 50)
+              .map((pin) => ({
+                id: String(pin.id).slice(0, 80),
+                x: Math.round(Number(pin.x)),
+                y: Math.round(Number(pin.y)),
+              }))
           : [],
-        beforeBase64: await loadImageBase64(p.beforePath, p.beforeBase64),
-        afterBase64: await loadImageBase64(p.afterPath, p.afterBase64),
+        beforeBase64: await loadImageBase64(leaseId, p.beforePath, p.beforeBase64),
+        afterBase64: await loadImageBase64(leaseId, p.afterPath, p.afterBase64),
       })),
     );
 
-    const liveReport = await analyzeRenderPairs(pairs);
+    const liveResult = await analyzeRenderPairs(pairs);
 
-    if (liveReport) {
+    if (liveResult) {
       if (isSupabaseConfigured()) {
+        // Insert-only: an existing cached report for these exact scans is never overwritten.
         const supabase = getSupabaseAdmin();
         await supabase.from("ai_reports").upsert(
           {
@@ -120,17 +158,18 @@ export async function POST(req: NextRequest) {
             move_out_record_id: moveOutRecordId,
             prompt_version: AI_PROMPT_VERSION,
             view_ids: viewIds,
-            report_json: liveReport,
+            report_json: liveResult.report,
           },
-          { onConflict: "cache_key" },
+          { onConflict: "cache_key", ignoreDuplicates: true },
         );
       }
 
       return NextResponse.json({
         source: "live",
+        model: liveResult.model,
         cacheKey,
         promptVersion: AI_PROMPT_VERSION,
-        report: liveReport,
+        report: liveResult.report,
       });
     }
 
@@ -149,16 +188,10 @@ export async function POST(req: NextRequest) {
       cacheKey,
       promptVersion: AI_PROMPT_VERSION,
       report: null,
-      note: "AI comparison unavailable; use manual 'Add change' to mark items yourself.",
+      note: "The AI comparison isn't available right now. Add changes by hand below.",
     });
   } catch (err) {
-    return NextResponse.json(
-      {
-        source: "manual-fallback",
-        report: null,
-        error: err instanceof Error ? err.message : "Analysis failed.",
-      },
-      { status: 500 },
-    );
+    console.error("POST /api/analyze failed", err);
+    return bad(500, "The AI comparison isn't available right now. Add changes by hand below.");
   }
 }
