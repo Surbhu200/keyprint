@@ -4,7 +4,7 @@
 
 Keyprint is a renter-owned, tamper-evident 3D record of an apartment paired with a rule-enforced USDC security-deposit escrow on Arc Testnet. Built for the **UBC 2026 Hackathon** (**Main Track:** Consumer Applications · **Chain Award:** Best use of Arc).
 
-- **Live Demo:** _Add your deployed Vercel production URL here_
+- **Live Demo:** [https://keyprint-two.vercel.app](https://keyprint-two.vercel.app)
 - **Demo Video (2–3 min):** _Add unlisted YouTube / Google Drive link here_
 
 ---
