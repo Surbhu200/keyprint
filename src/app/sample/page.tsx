@@ -109,7 +109,7 @@ export default function SampleApartmentPage() {
               href={`/lease/${REFERENCE_VERIFIED_LEASE_ID}/settle`}
               className={cn(buttonVariants({ variant: "outline" }))}
             >
-              View live settlement receipt
+              Real $2 test lease on Arc (scripted)
             </Link>
           </div>
         </div>

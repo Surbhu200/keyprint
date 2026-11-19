@@ -1,6 +1,7 @@
 "use client";
 
 import { Html } from "@react-three/drei";
+import { motion } from "framer-motion";
 import {
   CheckCircle2,
   DollarSign,
@@ -113,8 +114,19 @@ export function PinMarker({
         zIndexRange={[10, 0]}
         style={{ pointerEvents: onSelect ? "auto" : "none" }}
       >
-        <button
+        <motion.button
           type="button"
+          initial={
+            pin.variant === "claim"
+              ? { y: -14, scale: 0.72, opacity: 0 }
+              : { scale: 0.92, opacity: 0 }
+          }
+          animate={{ y: 0, scale: 1, opacity: 1 }}
+          transition={
+            pin.variant === "claim"
+              ? { type: "spring", stiffness: 420, damping: 16 }
+              : { duration: 0.2 }
+          }
           onClick={(e) => {
             e.stopPropagation();
             onSelect?.(pin);
@@ -130,7 +142,7 @@ export function PinMarker({
               {pin.priceTag}
             </span>
           )}
-        </button>
+        </motion.button>
       </Html>
     </group>
   );

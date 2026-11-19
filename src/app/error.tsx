@@ -24,8 +24,8 @@ export default function ErrorPage({
     <main className="flex-1 mx-auto w-full max-w-lg px-5 py-16 text-center space-y-4">
       <h1 className="text-xl font-semibold tracking-tight">This screen hit a snag.</h1>
       <p className="text-sm text-muted-foreground">
-        A display error can&apos;t change any sealed records or protected deposits
-        stay exactly as they were.
+        A display error can&apos;t change anything: sealed records and protected
+        deposits stay exactly as they were.
       </p>
       <div className="flex flex-wrap justify-center gap-2">
         <Button onClick={() => retry()}>Try again</Button>

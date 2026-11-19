@@ -145,6 +145,9 @@ export default function LeaseComparePage({
   const [aiSource, setAiSource] = useState<string | null>(null);
   const [promptVersion, setPromptVersion] = useState("keyprint-diff-v1");
   const [viewIds, setViewIds] = useState<string[]>([]);
+  const [viewSnapshots, setViewSnapshots] = useState<
+    Record<string, { before: string; after: string }>
+  >({});
   const [showFiltered, setShowFiltered] = useState(false);
 
   // Manual "Add change" fallback
@@ -298,6 +301,14 @@ export default function LeaseComparePage({
         alignmentMatrix: activeMatrix,
         moveInPins: eligiblePins,
       });
+      setViewSnapshots(
+        Object.fromEntries(
+          pairs.map((p) => [
+            p.viewId,
+            { before: p.beforeDataUrl, after: p.afterDataUrl },
+          ]),
+        ),
+      );
 
       // Cache identity: sealed record ids once they exist; before move-out is sealed, the
       // move-out file's own fingerprint, so a different scan can never reuse a stale report.
@@ -736,7 +747,11 @@ export default function LeaseComparePage({
                 moveInUrl={moveInUrl}
                 moveOutUrl={effectiveMoveOutUrl}
                 alignmentMatrix={activeMatrix}
-                moveInLabel="Move-in"
+                moveInLabel={
+                  moveInCreatedAt
+                    ? `Move-in ${new Date(moveInCreatedAt * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                    : "Move-in"
+                }
                 moveOutLabel="Move-out"
                 pins={sliderPins}
                 flyTo={flyTo}
@@ -867,8 +882,8 @@ export default function LeaseComparePage({
 
               {aiSource && (
                 <div className="text-xs text-muted-foreground">
-                  {aiSource === "live"
-                    ? "Fresh AI run on these scans."
+                  {aiSource.startsWith("live")
+                    ? `Fresh AI run on these scans${aiSource.includes("(") ? ` ${aiSource.slice(aiSource.indexOf("("))}` : ""}.`
                     : aiSource.startsWith("cache")
                       ? "From an earlier AI run on these exact scans."
                       : "AI wasn't available; add changes by hand below."}
@@ -924,6 +939,33 @@ export default function LeaseComparePage({
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         {item.description}
                       </p>
+
+                      {viewSnapshots[item.view_id] && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <figure className="space-y-1">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={viewSnapshots[item.view_id].before}
+                              alt={`Before: ${item.title}`}
+                              className="w-full aspect-[4/3] object-cover rounded-lg border border-border"
+                            />
+                            <figcaption className="text-[10px] text-muted-foreground text-center">
+                              Before (move-in)
+                            </figcaption>
+                          </figure>
+                          <figure className="space-y-1">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={viewSnapshots[item.view_id].after}
+                              alt={`After: ${item.title}`}
+                              className="w-full aspect-[4/3] object-cover rounded-lg border border-border"
+                            />
+                            <figcaption className="text-[10px] text-muted-foreground text-center">
+                              After (move-out)
+                            </figcaption>
+                          </figure>
+                        </div>
+                      )}
 
                       {item.matchedMoveInPin && (
                         <div className="rounded-lg border border-sealed/30 bg-sealed/5 px-3 py-2 text-xs text-sealed font-medium">

@@ -284,7 +284,7 @@ function VerifyContent() {
           Don&apos;t trust Keyprint. Verify it.
         </h1>
         <p className="text-sm text-muted-foreground">
-          Drop any 3D scan or photo here. Your browser hashes the file locally and checks its fingerprint directly against the sealed public record. Change one single byte and it fails.
+          Drop any 3D scan or photo here. Your browser hashes the file locally and checks its manifest fingerprint directly against the immutable record on Arc. Change one single byte and it fails.
         </p>
       </div>
 

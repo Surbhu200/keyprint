@@ -5,7 +5,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Fingerprint,
-  ScanLine,
   ShieldCheck,
 } from "lucide-react";
 import { TimeSliderScene } from "@/components/three/TimeSliderScene";
@@ -92,11 +91,11 @@ export default function AppLaunchPage() {
                 Protect my deposit
               </Link>
               <Link
-                href="/unit/new"
+                href="/sample"
                 className={cn(buttonVariants({ variant: "secondary", size: "lg" }))}
               >
-                <ScanLine className="h-4 w-4" />
-                Solo scan
+                See a sample apartment
+                <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
           </div>

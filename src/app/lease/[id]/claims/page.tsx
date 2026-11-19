@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { encodeFunctionData, parseUnits, type Hex } from "viem";
 import {
@@ -48,6 +48,7 @@ import {
 import { countsAsMoveInPin } from "@/lib/evidence/pin-rules";
 import { saveRecordManifests } from "@/lib/evidence/record-store";
 import { REFERENCE_SPOTS } from "@/lib/sample/reference";
+import { getSignedReadUrl } from "@/lib/supabase/upload";
 import { cn } from "@/lib/utils";
 
 interface DraftClaimPin {
@@ -156,6 +157,33 @@ export default function LeaseClaimsPage({
       })
       .filter((x): x is MoveInPinRef => x !== null);
   }, [live.records, live.coSignedMap, live.lease, moveInCreatedAt]);
+
+  // Resolve signed photo URLs for any move-in pins that include an attached photo
+  const [pinPhotoUrls, setPinPhotoUrls] = useState<Record<string, string>>({});
+  const moveInPinPhotoPaths = useMemo(() => {
+    const entries: Array<[string, string]> = [];
+    for (const r of live.records) {
+      if (r.kind === RecordKind.Pin && r.file_paths?.[0]) {
+        entries.push([r.record_id.toLowerCase(), r.file_paths[0]]);
+      }
+    }
+    return entries;
+  }, [live.records]);
+
+  useEffect(() => {
+    let active = true;
+    for (const [recId, path] of moveInPinPhotoPaths) {
+      if (pinPhotoUrls[recId]) continue;
+      getSignedReadUrl(path)
+        .then((url) => {
+          if (active) setPinPhotoUrls((prev) => ({ ...prev, [recId]: url }));
+        })
+        .catch(() => null);
+    }
+    return () => {
+      active = false;
+    };
+  }, [moveInPinPhotoPaths, pinPhotoUrls]);
 
   // The sealed alignment for this lease's move-in/move-out pair (maps move-out → move-in).
   const sealedAlignment = useMemo(
@@ -894,9 +922,9 @@ export default function LeaseClaimsPage({
 
                           {/* Hero demo beat: claim lands on a co-signed move-in pin */}
                           {matchedMoveInPin && (
-                            <div className="rounded-lg border border-sealed/30 bg-sealed/10 px-3 py-2 text-xs text-sealed space-y-0.5">
+                            <div className="rounded-lg border border-sealed/30 bg-sealed/10 px-3 py-2.5 text-xs text-sealed space-y-1.5">
                               <div className="font-semibold flex items-center gap-1.5">
-                                <AlertTriangle className="h-3.5 w-3.5" />
+                                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                                 <span>
                                   On a move-in pin
                                   {matchedMoveInPin.coSigned
@@ -904,9 +932,35 @@ export default function LeaseClaimsPage({
                                     : ""}
                                 </span>
                               </div>
-                              <div className="text-foreground/80">
+                              <div className="text-foreground/85">
                                 Move-in note: &ldquo;{matchedMoveInPin.text}&rdquo;
                               </div>
+                              {matchedMoveInPin.sealedAt > 0 && (
+                                <div className="text-[11px] text-muted-foreground">
+                                  Sealed{" "}
+                                  {new Date(matchedMoveInPin.sealedAt * 1000).toLocaleDateString(
+                                    "en-US",
+                                    { month: "short", day: "numeric", year: "numeric" },
+                                  )}
+                                  {matchedMoveInPin.coSigned &&
+                                  live.coSignedMap[matchedMoveInPin.id.toLowerCase()]
+                                    ? ` · Co-signed ${new Date(
+                                        live.coSignedMap[matchedMoveInPin.id.toLowerCase()] * 1000,
+                                      ).toLocaleDateString("en-US", {
+                                        month: "short",
+                                        day: "numeric",
+                                      })}`
+                                    : ""}
+                                </div>
+                              )}
+                              {pinPhotoUrls[matchedMoveInPin.id.toLowerCase()] && (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img
+                                  src={pinPhotoUrls[matchedMoveInPin.id.toLowerCase()]}
+                                  alt={`Move-in evidence: ${matchedMoveInPin.text}`}
+                                  className="w-full max-h-36 object-cover rounded-md border border-sealed/25 mt-1"
+                                />
+                              )}
                             </div>
                           )}
 
