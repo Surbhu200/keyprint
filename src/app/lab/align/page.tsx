@@ -77,7 +77,7 @@ export default function AlignLabPage() {
             <CardDescription>
               Currently loaded:{" "}
               {usingReference
-                ? "Built-in metric reference apartment scans (move-out has a 14° yaw + translation + 0.4% scale offset)"
+                ? "Built-in metric modern bedroom scans (move-out has a 12° yaw + translation + 0.4% scale offset)"
                 : "Custom uploaded .glb scans"}
             </CardDescription>
           </CardHeader>

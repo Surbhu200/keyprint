@@ -89,7 +89,7 @@ export function PinMarker({
   onSelect?: (pin: SpatialPinItem) => void;
 }) {
   const style = VARIANT_STYLES[pin.variant];
-  const radius = pin.selected ? 0.055 : 0.04;
+  const radius = pin.selected ? 0.038 : 0.028;
 
   return (
     <group position={pin.position}>
@@ -108,9 +108,9 @@ export function PinMarker({
       </mesh>
 
       <Html
-        position={[0, 0.09, 0]}
+        position={[0, 0.075, 0]}
         center
-        distanceFactor={5}
+        zIndexRange={[10, 0]}
         style={{ pointerEvents: onSelect ? "auto" : "none" }}
       >
         <button
@@ -119,7 +119,7 @@ export function PinMarker({
             e.stopPropagation();
             onSelect?.(pin);
           }}
-          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold shadow-md whitespace-nowrap transition-transform hover:scale-105 cursor-pointer ${style.pill} ${
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold shadow-md whitespace-nowrap transition-transform hover:scale-105 cursor-pointer ${style.pill} ${
             pin.selected ? "ring-2 ring-white scale-105" : ""
           }`}
         >

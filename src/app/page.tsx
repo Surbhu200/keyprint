@@ -1,121 +1,126 @@
+"use client";
+
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, MapPin, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  Fingerprint,
+  ScanLine,
+  ShieldCheck,
+} from "lucide-react";
+import { TimeSliderScene } from "@/components/three/TimeSliderScene";
+import type { SpatialPinItem } from "@/components/three/PinMarker";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  REFERENCE_ALIGNMENT,
+  REFERENCE_MOVE_IN_URL,
+  REFERENCE_MOVE_OUT_URL,
+  REFERENCE_SPOTS,
+} from "@/lib/sample/reference";
 import { cn } from "@/lib/utils";
 
 const COMPARISON_ROWS = [
   {
-    question: "Who holds the deposit",
-    today: "The landlord",
-    keyprint: "Protected escrow that neither side controls",
+    question: "Deposit",
+    today: "Held by landlord",
+    keyprint: "Protected escrow neither side controls",
   },
   {
-    question: "Who holds the evidence",
-    today: "The landlord's phone",
-    keyprint:
-      "Both sides; each file's fingerprint is sealed the moment it's added, and the landlord co-signs or contests it",
+    question: "Evidence",
+    today: "Landlord's phone",
+    keyprint: "Sealed 3D record co-signed by both sides",
   },
   {
-    question: "Who has to prove damage",
-    today: "The renter must prove they didn't do it",
-    keyprint: "The landlord must pin each claim to a spot in the 3D record and price it",
+    question: "Burden of proof",
+    today: "Renter sues to get it back",
+    keyprint: "Every dollar claimed needs a pin and a price",
   },
   {
-    question: "If nobody does anything",
-    today: "The landlord keeps the money",
-    keyprint: "Once the deadline passes, the full deposit comes back to you",
+    question: "No claim by deadline",
+    today: "Landlord keeps it",
+    keyprint: "Full deposit comes back automatically",
   },
 ] as const;
 
-export default function LandingPage() {
+const PREVIEW_PINS: SpatialPinItem[] = [
+  {
+    id: "scratch",
+    position: REFERENCE_SPOTS.deskScratch.position,
+    normal: REFERENCE_SPOTS.deskScratch.normal,
+    label: "Pre-existing scratch · Co-signed",
+    variant: "sealed",
+  },
+  {
+    id: "stain",
+    position: REFERENCE_SPOTS.carpetStain.position,
+    normal: REFERENCE_SPOTS.carpetStain.normal,
+    label: "Carpet stain",
+    priceTag: "$40",
+    variant: "claim",
+  },
+];
+
+export default function AppLaunchPage() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="w-full border-b border-border/70 bg-background/80 backdrop-blur-sm sticky top-0 z-20">
-        <div className="mx-auto max-w-5xl px-5 h-16 flex items-center justify-between">
-          <Link
-            href="/"
-            className="flex items-center gap-2 font-semibold tracking-tight text-foreground"
-          >
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-              <ShieldCheck className="h-4 w-4" />
-            </span>
-            <span className="text-base">Keyprint</span>
-          </Link>
+    <main className="flex-1 p-5 sm:p-8 max-w-7xl w-full mx-auto space-y-6">
+      {/* Split App Workspace: Actions on left, Live 3D Apartment Scene on right */}
+      <div className="grid gap-6 xl:grid-cols-12 items-stretch">
+        <div className="xl:col-span-5 flex flex-col justify-between gap-5">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-sealed/25 bg-sealed/10 px-3 py-1 text-xs font-semibold text-sealed">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>Every dollar claimed needs a pin and a price</span>
+            </div>
 
-          <nav className="flex items-center gap-3">
-            <Link
-              href="/verify"
-              className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-            >
-              Verify a record
-            </Link>
-            <Link
-              href="/start"
-              className={cn(buttonVariants({ variant: "default", size: "sm" }))}
-            >
-              Sign in
-            </Link>
-          </nav>
-        </div>
-      </header>
+            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-foreground leading-[1.1]">
+              Your apartment. Its history. Your proof.
+            </h1>
 
-      <main className="flex-1 mx-auto w-full max-w-5xl px-5 py-16 sm:py-24">
-        <section className="max-w-2xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-sealed/20 bg-sealed/10 px-3 py-1 text-xs font-medium text-sealed mb-6">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>Every dollar claimed needs a pin and a price</span>
+            <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+              Your deposit sits in protected escrow, every deduction must be
+              pinned to a spot in your apartment&apos;s 3D record, and if your
+              landlord doesn&apos;t claim in time, it comes back to you.
+            </p>
+
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              <Link
+                href="/start"
+                className={cn(buttonVariants({ variant: "default", size: "lg" }))}
+              >
+                <Fingerprint className="h-4 w-4" />
+                Protect my deposit
+              </Link>
+              <Link
+                href="/unit/new"
+                className={cn(buttonVariants({ variant: "secondary", size: "lg" }))}
+              >
+                <ScanLine className="h-4 w-4" />
+                Solo scan
+              </Link>
+            </div>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-foreground leading-[1.1]">
-            Your apartment. Its history. Your proof.
-          </h1>
-
-          <p className="mt-5 text-lg text-muted-foreground leading-relaxed">
-            Today your landlord holds your deposit and the evidence, and you have
-            to sue to get it back. With Keyprint, your deposit stays protected,
-            every dollar claimed has to be pinned to a spot in your apartment&apos;s
-            3D record, and if they don&apos;t claim in time, it comes back to you.
-          </p>
-
-          <div className="mt-8 flex flex-col sm:flex-row gap-3">
-            <Link
-              href="/start"
-              className={cn(buttonVariants({ variant: "default", size: "lg" }))}
-            >
-              Protect my deposit
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/sample"
-              className={cn(buttonVariants({ variant: "secondary", size: "lg" }))}
-            >
-              See a sample apartment
-            </Link>
-          </div>
-        </section>
-
-        <section className="mt-16 sm:mt-20">
           <Card>
-            <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <CardContent className="p-0 overflow-hidden">
+              <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-border bg-muted/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    <th className="py-4 px-6 w-1/4"></th>
-                    <th className="py-4 px-6 w-1/3">Today</th>
-                    <th className="py-4 px-6 text-foreground">With Keyprint</th>
+                  <tr className="border-b border-border bg-muted/60 font-semibold uppercase tracking-wider text-muted-foreground">
+                    <th className="py-2.5 px-3.5">Rule</th>
+                    <th className="py-2.5 px-3.5">Today</th>
+                    <th className="py-2.5 px-3.5 text-foreground">Keyprint</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border text-sm">
+                <tbody className="divide-y divide-border">
                   {COMPARISON_ROWS.map((row) => (
                     <tr key={row.question}>
-                      <td className="py-4 px-6 font-medium text-foreground align-top">
+                      <td className="py-2.5 px-3.5 font-medium text-foreground">
                         {row.question}
                       </td>
-                      <td className="py-4 px-6 text-muted-foreground align-top">
+                      <td className="py-2.5 px-3.5 text-muted-foreground">
                         {row.today}
                       </td>
-                      <td className="py-4 px-6 text-foreground font-medium align-top">
+                      <td className="py-2.5 px-3.5 font-medium text-foreground">
                         {row.keyprint}
                       </td>
                     </tr>
@@ -124,58 +129,35 @@ export default function LandingPage() {
               </table>
             </CardContent>
           </Card>
-        </section>
-
-        <section className="mt-12 grid gap-4 sm:grid-cols-3">
-          <Card>
-            <CardContent className="p-6">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent/10 text-accent mb-4">
-                <MapPin className="h-4 w-4" />
-              </div>
-              <h2 className="font-semibold text-base">Pin what&apos;s already there</h2>
-              <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-                Tap any scratch or scuff in your 3D room on move-in day, attach a
-                photo, and seal the record in one touch.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sealed/10 text-sealed mb-4">
-                <CheckCircle2 className="h-4 w-4" />
-              </div>
-              <h2 className="font-semibold text-base">Proof anyone can verify</h2>
-              <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-                Drop any scan or photo into Verify to confirm it matches the sealed
-                move-in record. Change one byte and it fails.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent/10 text-accent mb-4">
-                <ShieldCheck className="h-4 w-4" />
-              </div>
-              <h2 className="font-semibold text-base">Deadlines that protect you</h2>
-              <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-                Approved claims settle in seconds. If your landlord files nothing by
-                the deadline, your full deposit comes back.
-              </p>
-            </CardContent>
-          </Card>
-        </section>
-      </main>
-
-      <footer className="border-t border-border/70 py-6">
-        <div className="mx-auto max-w-5xl px-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>Keyprint — Your apartment. Its history. Your proof.</span>
-          <Link href="/verify" className="hover:text-foreground underline-offset-4 hover:underline">
-            Verify a sealed file
-          </Link>
         </div>
-      </footer>
-    </div>
+
+        {/* Live Photorealistic 3D Bedroom Preview inside the App */}
+        <div className="xl:col-span-7 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+              <ShieldCheck className="h-4 w-4 text-sealed" />
+              <span>Live 3D Apartment Record · Drag slider to compare move-in vs move-out</span>
+            </div>
+            <Link
+              href="/sample"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+            >
+              Open full 3D walkthrough
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          <TimeSliderScene
+            moveInUrl={REFERENCE_MOVE_IN_URL}
+            moveOutUrl={REFERENCE_MOVE_OUT_URL}
+            alignmentMatrix={REFERENCE_ALIGNMENT.matrix4ColumnMajor}
+            moveInLabel="Move-in"
+            moveOutLabel="Move-out"
+            pins={PREVIEW_PINS}
+            heightClassName="h-[460px] xl:h-full xl:min-h-[500px]"
+          />
+        </div>
+      </div>
+    </main>
   );
 }

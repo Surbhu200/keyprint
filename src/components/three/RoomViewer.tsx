@@ -48,24 +48,25 @@ function LoadedRoom({
     if (controlsRef.current && fittedRef.current !== url) {
       const box = new THREE.Box3().setFromObject(cloned);
       if (!box.isEmpty()) {
-        // Never move or re-center the model; frame it with CameraControls.fitToBox
+        // Never move or re-center the model; position the camera inside the room
+        // looking across the floor, carpet, furniture, and back wall.
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
+        const camX = center.x + size.x * 0.16;
+        const camY = box.min.y + size.y * 0.62;
+        const camZ = box.max.z - Math.min(0.25, size.z * 0.08);
+        const targetX = center.x - size.x * 0.05;
+        const targetY = box.min.y + size.y * 0.28;
+        const targetZ = center.z + size.z * 0.02;
         controlsRef.current.setLookAt(
-          center.x + size.x * 0.65,
-          center.y + size.y * 0.65,
-          center.z + size.z * 0.95,
-          center.x,
-          center.y * 0.85,
-          center.z,
+          camX,
+          camY,
+          camZ,
+          targetX,
+          targetY,
+          targetZ,
           false,
         );
-        controlsRef.current.fitToBox(box, false, {
-          paddingLeft: 0.15,
-          paddingRight: 0.15,
-          paddingTop: 0.15,
-          paddingBottom: 0.15,
-        });
         fittedRef.current = url;
       }
     }
@@ -112,9 +113,10 @@ function LoadedRoom({
   return (
     <>
       <CameraControls ref={controlsRef} makeDefault smoothTime={0.35} />
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[5, 8, 6]} intensity={0.95} />
-      <directionalLight position={[-4, 5, -3]} intensity={0.4} />
+      <hemisphereLight args={["#fff8f0", "#7c7268", 1.1]} />
+      <ambientLight intensity={0.65} />
+      <directionalLight position={[4, 7, 5]} intensity={1.1} />
+      <directionalLight position={[-4, 4, -3]} intensity={0.45} />
       <primitive
         object={cloned}
         onPointerDown={handlePointerDown}

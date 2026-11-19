@@ -51,7 +51,7 @@ function ScissorComparisonContent({
     grp.matrixWorldNeedsUpdate = true;
   }, [alignmentMatrix]);
 
-  // Frame the move-in room cleanly once
+  // Frame inside the move-in bedroom looking cleanly across the carpet, bed, and window
   useEffect(() => {
     if (fittedRef.current || !controlsRef.current) return;
     const box = new THREE.Box3().setFromObject(moveInClone);
@@ -59,20 +59,14 @@ function ScissorComparisonContent({
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
       controlsRef.current.setLookAt(
-        center.x + size.x * 0.6,
-        center.y + size.y * 0.65,
-        center.z + size.z * 0.95,
-        center.x,
-        center.y * 0.85,
-        center.z,
+        center.x + size.x * 0.16,
+        box.min.y + size.y * 0.62,
+        box.max.z - Math.min(0.25, size.z * 0.08),
+        center.x - size.x * 0.05,
+        box.min.y + size.y * 0.28,
+        center.z + size.z * 0.02,
         false,
       );
-      controlsRef.current.fitToBox(box, false, {
-        paddingLeft: 0.12,
-        paddingRight: 0.12,
-        paddingTop: 0.12,
-        paddingBottom: 0.12,
-      });
       fittedRef.current = true;
     }
   }, [moveInClone]);
@@ -128,9 +122,10 @@ function ScissorComparisonContent({
   return (
     <>
       <CameraControls ref={controlsRef} makeDefault smoothTime={0.35} />
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[5, 8, 6]} intensity={0.95} />
-      <directionalLight position={[-4, 5, -3]} intensity={0.4} />
+      <hemisphereLight args={["#fff8f0", "#7c7268", 1.1]} />
+      <ambientLight intensity={0.65} />
+      <directionalLight position={[4, 7, 5]} intensity={1.1} />
+      <directionalLight position={[-4, 4, -3]} intensity={0.45} />
 
       <group ref={moveInGroupRef}>
         <primitive object={moveInClone} />
