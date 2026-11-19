@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { CameraControls, useGLTF, useProgress } from "@react-three/drei";
 import type CameraControlsImpl from "camera-controls";
+import { RotateCcw } from "lucide-react";
 import { PinMarker, type SpatialPinItem } from "./PinMarker";
 
 export interface SurfaceTapEvent {
@@ -23,6 +24,7 @@ interface ModelSceneProps {
     normal?: [number, number, number];
     nonce: number;
   } | null;
+  resetNonce?: number;
 }
 
 function LoadedRoom({
@@ -32,6 +34,7 @@ function LoadedRoom({
   onPinSelect,
   onModelLoaded,
   flyTo,
+  resetNonce,
 }: ModelSceneProps) {
   const { scene } = useGLTF(url);
   // Clone so two side-by-side viewers never mutate each other's scene graph,
@@ -41,36 +44,40 @@ function LoadedRoom({
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const fittedRef = useRef<string | null>(null);
 
+  const frameInterior = (smooth: boolean) => {
+    if (!controlsRef.current) return;
+    const box = new THREE.Box3().setFromObject(cloned);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    controlsRef.current.setLookAt(
+      center.x + size.x * 0.16,
+      box.min.y + size.y * 0.62,
+      box.max.z - Math.min(0.25, size.z * 0.08),
+      center.x - size.x * 0.05,
+      box.min.y + size.y * 0.28,
+      center.z + size.z * 0.02,
+      smooth,
+    );
+  };
+
   useEffect(() => {
     cloned.updateMatrixWorld(true);
     onModelLoaded?.(cloned);
 
     if (controlsRef.current && fittedRef.current !== url) {
-      const box = new THREE.Box3().setFromObject(cloned);
-      if (!box.isEmpty()) {
-        // Never move or re-center the model; position the camera inside the room
-        // looking across the floor, carpet, furniture, and back wall.
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const camX = center.x + size.x * 0.16;
-        const camY = box.min.y + size.y * 0.62;
-        const camZ = box.max.z - Math.min(0.25, size.z * 0.08);
-        const targetX = center.x - size.x * 0.05;
-        const targetY = box.min.y + size.y * 0.28;
-        const targetZ = center.z + size.z * 0.02;
-        controlsRef.current.setLookAt(
-          camX,
-          camY,
-          camZ,
-          targetX,
-          targetY,
-          targetZ,
-          false,
-        );
-        fittedRef.current = url;
-      }
+      frameInterior(false);
+      fittedRef.current = url;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloned, url, onModelLoaded]);
+
+  useEffect(() => {
+    if (resetNonce && resetNonce > 0) {
+      frameInterior(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetNonce]);
 
   useEffect(() => {
     if (!flyTo || !controlsRef.current) return;
@@ -172,6 +179,8 @@ export function RoomViewer({
   heightClassName = "h-[460px]",
   hint,
 }: RoomViewerProps) {
+  const [resetNonce, setResetNonce] = useState(0);
+
   return (
     <div
       className={`relative w-full overflow-hidden rounded-2xl border border-border bg-[#ebe6de] ${heightClassName}`}
@@ -182,6 +191,16 @@ export function RoomViewer({
           {hint}
         </div>
       )}
+      <button
+        type="button"
+        onClick={() => setResetNonce((n) => n + 1)}
+        title="Reset camera view"
+        aria-label="Reset camera view"
+        className="absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full bg-surface/90 hover:bg-surface backdrop-blur-xs border border-border px-2.5 py-1 text-xs font-medium text-foreground shadow-xs cursor-pointer"
+      >
+        <RotateCcw className="h-3 w-3" />
+        <span>Reset</span>
+      </button>
       <Canvas
         dpr={[1, 1.5]}
         camera={{ fov: 48, near: 0.05, far: 100 }}
@@ -196,6 +215,7 @@ export function RoomViewer({
             onPinSelect={onPinSelect}
             onModelLoaded={onModelLoaded}
             flyTo={flyTo}
+            resetNonce={resetNonce}
           />
         </Suspense>
       </Canvas>

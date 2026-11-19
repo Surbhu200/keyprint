@@ -35,6 +35,13 @@ export const REFERENCE_ALIGNMENT = solveUmeyama(
   REFERENCE_MOVE_IN_LANDMARKS,
 );
 
+export const REFERENCE_VERIFIED_LEASE_ID =
+  "0x03233ed03704723f17cc7625d024bf316f17f7ae0e6685524c3205522bd8d9ed";
+export const REFERENCE_VERIFIED_MOVE_IN_RECORD_ID =
+  "0x92934d0e9167e77d31d663c933fe3e08569c1b0a00592763d740513adbc077d2";
+export const DEFAULT_DEMO_REVIEWER =
+  "0xB59A3658D210f3DDbb202d0FbD14373EED43AC3F";
+
 // Key spots in the real modern bedroom scene (move-in metric coordinates)
 export const REFERENCE_SPOTS = {
   // Pre-existing scratch on the side table / headboard area (present in both move-in & move-out)

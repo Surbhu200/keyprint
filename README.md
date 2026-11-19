@@ -30,6 +30,32 @@ Keyprint is a renter-owned, tamper-evident 3D record of an apartment paired with
 
 ## Architecture (3 Layers)
 
+```mermaid
+flowchart LR
+  subgraph Client["Browser / Installable PWA (Windows & iPhone)"]
+    UI["Next.js App Router + R3F 3D Engine\n(Umeyama + three-mesh-bvh + Scissor Slider)"]
+    HASH["hash-wasm SHA-256 + RFC 8785 Manifest"]
+    PASSKEY["Circle Modular Wallets\n(Face ID / Windows Hello, paymaster: true)"]
+    UI --> HASH --> PASSKEY
+  end
+
+  subgraph Chain["Arc Testnet (Chain ID 5042002 · USDC Gas)"]
+    REG["KeyprintRegistry\n(Fingerprints, Co-signs, Contests)"]
+    ESC["KeyprintEscrow\n(Ownerless 6-dec USDC Escrow + owed[])"]
+    PASSKEY -->|"Batched Sponsored UserOps"| REG
+    PASSKEY -->|"approve + fund / claim / settle"| ESC
+  end
+
+  subgraph Server["Vercel Serverless + Supabase Private Storage"]
+    SUPA["Supabase Private Bucket (50 MB)\n+ Postgres Metadata Index"]
+    CLAUDE["/api/analyze\nClaude Opus 5.5 Structured Diff"]
+    KEEPER["/api/keeper/settle\nDeadline Keeper + Daily Cron"]
+    UI -->|"Direct Signed PUT/GET"| SUPA
+    UI -->|"Viewpoint Paths"| CLAUDE
+    KEEPER -->|"simulateContract + settle()"| ESC
+  end
+```
+
 1. **Browser (Next.js App Router + React Three Fiber + three-mesh-bvh + hash-wasm):**
    - Hashes `.glb` scans and photos in streaming chunks (`hash-wasm`), canonicalizes manifests per RFC 8785 (`canonicalize`), and signs gas-sponsored ERC-4337 UserOperations with passkeys via Circle Modular Wallets.
    - Aligns move-out scans to move-in coordinates using the Umeyama similarity transform (`ml-matrix`) and gates comparisons on surface agreement (`three-mesh-bvh`, median gap `< 2 cm` and `>= 60%` within `5 cm`).

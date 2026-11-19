@@ -46,6 +46,9 @@ function VerifyContent() {
 
   const [recordIdInput, setRecordIdInput] = useState(initialRecordId);
   const [manifestJsonInput, setManifestJsonInput] = useState("");
+  const [manualManifestOverride, setManualManifestOverride] = useState(
+    Boolean(initialRecordId),
+  );
   const [txMeta, setTxMeta] = useState<{
     txHash: string | null;
     blockNumber: number | null;
@@ -81,11 +84,11 @@ function VerifyContent() {
     setHashProgress(0);
 
     try {
-      let rid = recordIdInput.trim();
-      let mJson = manifestJsonInput.trim();
-      let lookupTx = txMeta;
+      let rid = manualManifestOverride ? recordIdInput.trim() : "";
+      let mJson = manualManifestOverride ? manifestJsonInput.trim() : "";
+      let lookupTx = manualManifestOverride ? txMeta : null;
 
-      // If no manifest/recordId pasted, hash locally first and check if our index has a matching sealed manifest
+      // Always resolve by the dropped file's local SHA-256 unless user loaded a specific manifest
       if (!rid || !mJson) {
         const localSha = await sha256Blob(file, (pct) => setHashProgress(pct));
         const res = await fetch(
@@ -101,6 +104,7 @@ function VerifyContent() {
 
         if (!found) {
           setHashProgress(null);
+          setTxMeta(null);
           setResult({
             valid: false,
             reason: "This file does not match any sealed record.",
@@ -151,6 +155,7 @@ function VerifyContent() {
       if (parsed.records?.[0]) {
         setRecordIdInput(parsed.records[0].recordId);
         setManifestJsonInput(parsed.records[0].canonicalManifestJson);
+        setManualManifestOverride(true);
         setTxMeta({
           txHash: parsed.records[0].txHash ?? null,
           blockNumber: parsed.records[0].blockNumber ?? null,
@@ -158,11 +163,14 @@ function VerifyContent() {
       } else if (parsed.canonicalManifestJson && parsed.recordId) {
         setRecordIdInput(parsed.recordId);
         setManifestJsonInput(parsed.canonicalManifestJson);
+        setManualManifestOverride(true);
       } else {
         setManifestJsonInput(text);
+        setManualManifestOverride(true);
       }
     } catch {
       setManifestJsonInput(text);
+      setManualManifestOverride(true);
     }
   };
 
@@ -423,17 +431,38 @@ function VerifyContent() {
           <input
             type="text"
             value={recordIdInput}
-            onChange={(e) => setRecordIdInput(e.target.value)}
+            onChange={(e) => {
+              setRecordIdInput(e.target.value);
+              setManualManifestOverride(Boolean(e.target.value.trim()));
+            }}
             placeholder="Record ID (0x…)"
             className="w-full h-10 rounded-lg border border-border bg-background px-3 text-xs font-mono"
           />
           <textarea
             rows={4}
             value={manifestJsonInput}
-            onChange={(e) => setManifestJsonInput(e.target.value)}
+            onChange={(e) => {
+              setManifestJsonInput(e.target.value);
+              setManualManifestOverride(Boolean(e.target.value.trim()));
+            }}
             placeholder="Exact canonical manifest.json bytes (auto-filled when opened from a Verify link)"
             className="w-full rounded-lg border border-border bg-background p-3 text-xs font-mono"
           />
+          {(recordIdInput || manifestJsonInput) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setRecordIdInput("");
+                setManifestJsonInput("");
+                setManualManifestOverride(false);
+                setTxMeta(null);
+                setResult(null);
+              }}
+            >
+              Clear loaded manifest
+            </Button>
+          )}
         </CardContent>
       </Card>
     </main>

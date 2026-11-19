@@ -28,6 +28,8 @@ import {
   REFERENCE_MOVE_OUT_URL,
   REFERENCE_SPOTS,
   REFERENCE_TAMPERED_URL,
+  REFERENCE_VERIFIED_LEASE_ID,
+  REFERENCE_VERIFIED_MOVE_IN_RECORD_ID,
 } from "@/lib/sample/reference";
 import { cn } from "@/lib/utils";
 
@@ -98,10 +100,16 @@ export default function SampleApartmentPage() {
               <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
-              href="/verify"
+              href={`/verify?recordId=${REFERENCE_VERIFIED_MOVE_IN_RECORD_ID}`}
               className={cn(buttonVariants({ variant: "secondary" }))}
             >
-              Open Verify
+              Verify live proof
+            </Link>
+            <Link
+              href={`/lease/${REFERENCE_VERIFIED_LEASE_ID}/settle`}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Live Arc receipt ($0.032 fee)
             </Link>
           </div>
         </div>
@@ -285,13 +293,13 @@ export default function SampleApartmentPage() {
                   1-byte-changed copy (.glb)
                 </a>
                 <Link
-                  href="/verify"
+                  href={`/verify?recordId=${REFERENCE_VERIFIED_MOVE_IN_RECORD_ID}`}
                   className={cn(
                     buttonVariants({ variant: "default", size: "sm" }),
                     "w-full mt-1",
                   )}
                 >
-                  Open Verify page
+                  Verify live sealed scan
                 </Link>
               </CardContent>
             </Card>

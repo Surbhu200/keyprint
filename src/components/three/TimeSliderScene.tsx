@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { CameraControls, useGLTF, useProgress } from "@react-three/drei";
 import type CameraControlsImpl from "camera-controls";
-import { GripVertical } from "lucide-react";
+import { GripVertical, RotateCcw } from "lucide-react";
 import { PinMarker, type SpatialPinItem } from "./PinMarker";
 
 interface ScissorContentProps {
@@ -20,6 +20,7 @@ interface ScissorContentProps {
     normal?: [number, number, number];
     nonce: number;
   } | null;
+  resetNonce?: number;
 }
 
 function ScissorComparisonContent({
@@ -30,6 +31,7 @@ function ScissorComparisonContent({
   pins,
   onPinSelect,
   flyTo,
+  resetNonce,
 }: ScissorContentProps) {
   const gltfIn = useGLTF(moveInUrl);
   const gltfOut = useGLTF(moveOutUrl);
@@ -52,24 +54,36 @@ function ScissorComparisonContent({
   }, [alignmentMatrix]);
 
   // Frame inside the move-in bedroom looking cleanly across the carpet, bed, and window
+  const frameInterior = (smooth: boolean) => {
+    if (!controlsRef.current) return;
+    const box = new THREE.Box3().setFromObject(moveInClone);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    controlsRef.current.setLookAt(
+      center.x + size.x * 0.16,
+      box.min.y + size.y * 0.62,
+      box.max.z - Math.min(0.25, size.z * 0.08),
+      center.x - size.x * 0.05,
+      box.min.y + size.y * 0.28,
+      center.z + size.z * 0.02,
+      smooth,
+    );
+  };
+
   useEffect(() => {
     if (fittedRef.current || !controlsRef.current) return;
-    const box = new THREE.Box3().setFromObject(moveInClone);
-    if (!box.isEmpty()) {
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      controlsRef.current.setLookAt(
-        center.x + size.x * 0.16,
-        box.min.y + size.y * 0.62,
-        box.max.z - Math.min(0.25, size.z * 0.08),
-        center.x - size.x * 0.05,
-        box.min.y + size.y * 0.28,
-        center.z + size.z * 0.02,
-        false,
-      );
-      fittedRef.current = true;
-    }
+    frameInterior(false);
+    fittedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moveInClone]);
+
+  useEffect(() => {
+    if (resetNonce && resetNonce > 0) {
+      frameInterior(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetNonce]);
 
   // Smooth fly-to-pin via CameraControls.setLookAt
   useEffect(() => {
@@ -187,6 +201,7 @@ export function TimeSliderScene({
   heightClassName = "h-[500px]",
 }: TimeSliderSceneProps) {
   const [split, setSplit] = useState(0.5);
+  const [resetNonce, setResetNonce] = useState(0);
   const splitRef = useRef(0.5);
   const containerRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -230,16 +245,32 @@ export function TimeSliderScene({
             pins={pins}
             onPinSelect={onPinSelect}
             flyTo={flyTo}
+            resetNonce={resetNonce}
           />
         </Suspense>
       </Canvas>
 
-      {/* Top left / right labels */}
+      {/* Top left / right labels + Reset camera */}
       <div className="pointer-events-none absolute top-3 left-3 z-10 rounded-full bg-surface/90 backdrop-blur-xs border border-border px-3 py-1 text-xs font-semibold text-foreground shadow-xs">
         {moveInLabel}
       </div>
-      <div className="pointer-events-none absolute top-3 right-3 z-10 rounded-full bg-surface/90 backdrop-blur-xs border border-border px-3 py-1 text-xs font-semibold text-foreground shadow-xs">
-        {moveOutLabel}
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+        <div className="pointer-events-none rounded-full bg-surface/90 backdrop-blur-xs border border-border px-3 py-1 text-xs font-semibold text-foreground shadow-xs">
+          {moveOutLabel}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setResetNonce((n) => n + 1);
+            splitRef.current = 0.5;
+            setSplit(0.5);
+          }}
+          title="Reset camera & slider"
+          aria-label="Reset camera and slider"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-surface/90 hover:bg-surface backdrop-blur-xs border border-border text-foreground shadow-xs cursor-pointer"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
       </div>
 
       {/* Vertical wipe bar + draggable handle */}

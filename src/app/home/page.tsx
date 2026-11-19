@@ -37,7 +37,8 @@ import {
   LeaseStateLabel,
   stringToBytes32,
 } from "@/lib/chain/arc";
-import { sendSponsoredCalls } from "@/lib/chain/wallet";
+import { readUsdcBalance, sendSponsoredCalls } from "@/lib/chain/wallet";
+import { DEFAULT_DEMO_REVIEWER } from "@/lib/sample/reference";
 import { cn } from "@/lib/utils";
 import type { OnchainLease, StoredLeaseMeta } from "@/components/useLeaseLiveState";
 
@@ -58,13 +59,29 @@ export default function HomePage() {
   const [showCreate, setShowCreate] = useState(false);
   const [unitName, setUnitName] = useState("Apt 302 · Oak Street");
   const [renterAddr, setRenterAddr] = useState("");
-  const [reviewerAddr, setReviewerAddr] = useState("");
+  const [reviewerAddr, setReviewerAddr] = useState(DEFAULT_DEMO_REVIEWER);
   const [depositDollars, setDepositDollars] = useState("200");
   const [windowMinutes, setWindowMinutes] = useState("10");
   const [leaseEndOffsetMin, setLeaseEndOffsetMin] = useState("0");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [releasingId, setReleasingId] = useState<string | null>(null);
+  const [availableBalance, setAvailableBalance] = useState<bigint | null>(null);
+
+  useEffect(() => {
+    if (!session?.address) return;
+    let active = true;
+    readUsdcBalance(session.address)
+      .then((b) => {
+        if (active) setAvailableBalance(b);
+      })
+      .catch(() => {
+        if (active) setAvailableBalance(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session?.address, leases.length]);
 
   const loadLeases = useCallback(async (addr?: Address) => {
     try {
@@ -290,11 +307,18 @@ export default function HomePage() {
                 <ShieldCheck className="h-4 w-4" />
                 <span>Protected Deposits</span>
               </div>
-              <div className="text-4xl font-semibold tracking-tight">
-                {formatDollars(totalProtected)}{" "}
-                <span className="text-lg font-normal text-muted-foreground">
-                  protected
+              <div className="text-4xl font-semibold tracking-tight flex flex-wrap items-baseline gap-3">
+                <span>
+                  {formatDollars(totalProtected)}{" "}
+                  <span className="text-lg font-normal text-muted-foreground">
+                    protected
+                  </span>
                 </span>
+                {session && availableBalance !== null && (
+                  <Badge variant="default" className="text-xs font-medium">
+                    {formatDollars(availableBalance)} available
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {session
@@ -335,10 +359,42 @@ export default function HomePage() {
         {showCreate && session && (
           <Card>
             <CardHeader>
-              <CardTitle>Create a protected lease</CardTitle>
-              <CardDescription>
-                Propose the deposit, deadlines, and independent reviewer. Your renter sees every term before paying.
-              </CardDescription>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle>Create a protected lease</CardTitle>
+                  <CardDescription>
+                    Propose the deposit, deadlines, and independent reviewer. Your renter sees every term before paying.
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setUnitName("Lease A · Apt 302");
+                      setDepositDollars("200");
+                      setWindowMinutes("10");
+                      setLeaseEndOffsetMin("0");
+                    }}
+                  >
+                    Preset: Demo Lease A ($200 / 10m)
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setUnitName("Lease B · Apt 404 (Auto-refund)");
+                      setDepositDollars("100");
+                      setWindowMinutes("1");
+                      setLeaseEndOffsetMin("0");
+                    }}
+                  >
+                    Preset: Demo Lease B ($100 / 1m)
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleCreateLease} className="space-y-4">
