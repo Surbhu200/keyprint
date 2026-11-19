@@ -55,12 +55,30 @@ Keyprint is a renter-owned, tamper-evident 3D record of an apartment paired with
 | Contract | Address | Explorer |
 | --- | --- | --- |
 | USDC (ERC-20 interface, 6 decimals) | `0x3600000000000000000000000000000000000000` | [Arc Testnet Explorer](https://explorer.testnet.arc.io/address/0x3600000000000000000000000000000000000000) |
-| `KeyprintRegistry` | _Fill after `forge create`_ | — |
-| `KeyprintEscrow` | _Fill after `forge create`_ | — |
+| `KeyprintRegistry` | `0x57cF232F1e0c250d6bcA49Af6461ee477f450341` | [Arc Testnet Explorer](https://explorer.testnet.arc.io/address/0x57cF232F1e0c250d6bcA49Af6461ee477f450341) |
+| `KeyprintEscrow` (`MIN_WINDOW = 60s`) | `0x97d85aC09C01ed2dBf2611b7B91fF4BB2A69654a` | [Arc Testnet Explorer](https://explorer.testnet.arc.io/address/0x97d85aC09C01ed2dBf2611b7B91fF4BB2A69654a) |
 
-### Scripted Full Lease Transactions & Measured USDC Fees
+### Full Live Lease on Arc Testnet & Measured USDC Gas Cost
 
-- _Record real Arc Testnet tx links (create, fund, end, claim, dispute, withdraw, settle, keeper refund) and measured total USDC gas fees here after running `contracts/script/DemoLease.s.sol` and your live passkey walkthrough._
+An entire lease lifecycle on Arc Testnet (**12 transactions**: create, seal move-in, approve, fund, co-sign, seal move-out, end lease, seal claim evidence, file claim, close claims, accept, settle) cost **$0.032331 USDC** total in measured native gas fees:
+
+- **Lease ID:** `0x03233ed03704723f17cc7625d024bf316f17f7ae0e6685524c3205522bd8d9ed`
+- **Co-Signed Move-In Record ID (verifiable live at `/verify`):** `0x92934d0e9167e77d31d663c933fe3e08569c1b0a00592763d740513adbc077d2`
+
+| Step | Block | Gas Fee (USDC) | Explorer |
+| --- | --- | --- | --- |
+| `createLease` | `72,981,949` | `$0.005127` | [View tx](https://explorer.testnet.arc.io/tx/0xf85d2a1f6f6fc2acf08f708492c519a98f444da68f5cdc07f1ca8510ea3f93ec) |
+| `seal(MoveInScan)` | `72,981,958` | `$0.003045` | [View tx](https://explorer.testnet.arc.io/tx/0x4cc6f20dd02e0e2291b7583133571ac0d5f42e446d90922a17ba4adb650084ac) |
+| `USDC.approve(2 USDC)` | `72,981,967` | `$0.001164` | [View tx](https://explorer.testnet.arc.io/tx/0x5468c776e0fa1f50df131f9bec217311d58a1cdb93f4739aeddf09bafc230615) |
+| `fund(2 USDC)` | `72,981,975` | `$0.003268` | [View tx](https://explorer.testnet.arc.io/tx/0x71ebafb4dbfbb1f49161d1e342a9351973977a2e28ae5f51362a3a9448fd0965) |
+| `acknowledge` (landlord co-sign) | `72,981,984` | `$0.001016` | [View tx](https://explorer.testnet.arc.io/tx/0xfbc76e7f8f91200478277ff2375c6c4eefc275c5740cef418df743027c2043fd) |
+| `seal(MoveOutScan)` | `72,981,986` | `$0.003463` | [View tx](https://explorer.testnet.arc.io/tx/0xa324e123adc0a3e9a4ba68b466741e65229515aafd1fa871ef1d7ddccc66a003) |
+| `endLease` | `72,981,994` | `$0.001776` | [View tx](https://explorer.testnet.arc.io/tx/0x081fd7949c97669411e429615ba8fa7ae2f803064925c96ddbcc7461656059a1) |
+| `seal(ClaimEvidence)` | `72,982,003` | `$0.003463` | [View tx](https://explorer.testnet.arc.io/tx/0xfae175d9054cd7bdf3219cee524ec8995b132b19120c6ebe0dcbe3c39599b7fd) |
+| `fileClaim(1 USDC)` | `72,982,012` | `$0.005821` | [View tx](https://explorer.testnet.arc.io/tx/0xb4c877636527224b16a0f080f51514ec36f5237fe4500d8856e4df7a27f874c3) |
+| `closeClaims` | `72,982,020` | `$0.000692` | [View tx](https://explorer.testnet.arc.io/tx/0x37cdb83a4cf4edacd8f322f312ed9c8f43d99cb883ecf9dd12ca92faaa14e861) |
+| `acceptClaim` | `72,982,029` | `$0.000944` | [View tx](https://explorer.testnet.arc.io/tx/0x8a9bc16e9b6e1539dc64cfc236ac21603ff0db8e4ac31848e225b4e1dd837b1c) |
+| `settle` (`$1` landlord / `$1` renter) | `72,982,031` | `$0.002553` | [View tx](https://explorer.testnet.arc.io/tx/0xffb9426eff0107dd66e232444ff120f59fefd7eb9dce9e20ae519369376dcfc7) |
 
 ---
 
