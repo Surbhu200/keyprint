@@ -65,6 +65,7 @@ import {
   REFERENCE_MOVE_OUT_LANDMARKS,
   REFERENCE_MOVE_OUT_URL,
 } from "@/lib/sample/reference";
+import { isGlbFile, NOT_A_GLB_MESSAGE } from "@/lib/scan-file";
 import { uploadToPrivateStorage } from "@/lib/supabase/upload";
 import { cn } from "@/lib/utils";
 
@@ -144,7 +145,7 @@ export default function LeaseComparePage({
   const [alignment, setAlignment] = useState<AlignmentOutput | null>(null);
   const [changes, setChanges] = useState<ReviewableChange[]>([]);
   const [aiSource, setAiSource] = useState<string | null>(null);
-  const [promptVersion, setPromptVersion] = useState("keyprint-diff-v3");
+  const [promptVersion, setPromptVersion] = useState("keyprint-diff-v4");
   const [viewIds, setViewIds] = useState<string[]>([]);
   const [viewSnapshots, setViewSnapshots] = useState<
     Record<string, { before: string; after: string }>
@@ -713,7 +714,7 @@ export default function LeaseComparePage({
         )}
 
         {!moveInUrl && !live.loading && (
-          <div className="rounded-2xl border border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+          <div className="rounded-[20px] bg-muted p-6 text-[15px] text-muted-foreground">
             The move-in scan for this lease isn&apos;t available yet, so there&apos;s nothing to compare against.
           </div>
         )}
@@ -732,7 +733,7 @@ export default function LeaseComparePage({
               <div className="flex flex-wrap gap-2">
                 {!leaseEnded && live.lease?.state === 1 && (
                   <Button
-                    className="h-auto min-h-11 w-full whitespace-normal py-2.5 text-center leading-snug sm:w-auto"
+                    className="h-auto min-h-12 w-full whitespace-normal rounded-2xl px-5 py-3 text-center text-[15px] leading-snug sm:w-auto"
                     disabled={busy !== null || !session}
                     onClick={handleEndLease}
                   >
@@ -743,7 +744,7 @@ export default function LeaseComparePage({
                 {leaseEnded && (
                   <Link
                     href={`/lease/${leaseId}/claims`}
-                    className={cn(buttonVariants({ variant: "default" }))}
+                    className={cn(buttonVariants({ variant: "default" }), "h-12 w-full rounded-2xl px-5 text-[15px] sm:w-auto")}
                   >
                     Go to claims
                   </Link>
@@ -775,8 +776,10 @@ export default function LeaseComparePage({
         <Card>
           <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Sparkles className="h-4 w-4 text-suggestion" />
+              <CardTitle className="flex items-center gap-2.5">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-suggestion/10 text-suggestion">
+                  <Sparkles className="h-4 w-4" />
+                </span>
                 {leaseEnded ? "Sealed change report" : "Change suggestions"}
               </CardTitle>
               <CardDescription>
@@ -787,11 +790,11 @@ export default function LeaseComparePage({
             </div>
 
             {!leaseEnded && (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                 {filteredCount > 0 && (
                   <Button
-                    size="sm"
                     variant="ghost"
+                    className="h-12 w-full rounded-2xl px-4 text-[14px] text-muted-foreground hover:text-foreground sm:w-auto"
                     onClick={() => setShowFiltered((v) => !v)}
                   >
                     <Eye className="h-3.5 w-3.5" />
@@ -801,11 +804,11 @@ export default function LeaseComparePage({
                   </Button>
                 )}
                 <Button
-                  size="sm"
+                  className="h-12 flex-1 rounded-2xl px-5 text-[15px] sm:flex-none"
                   disabled={!alignmentPassed || busy !== null}
                   onClick={() => handleRunAiCompare(false)}
                 >
-                  <Sparkles className="h-3.5 w-3.5" />
+                  <Sparkles className="h-4 w-4 text-sealed-bright" />
                 {busy && busy.includes("AI")
                   ? "Comparing…"
                   : "Run AI comparison"}
@@ -813,8 +816,8 @@ export default function LeaseComparePage({
                 {aiSource && (
                   // A normal run returns the saved answer for these exact scans; this asks again.
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    variant="secondary"
+                    className="h-12 rounded-2xl px-5 text-[15px]"
                     disabled={!alignmentPassed || busy !== null}
                     onClick={() => handleRunAiCompare(true)}
                     title="Ask the AI again instead of using the saved answer for these scans"
@@ -829,11 +832,11 @@ export default function LeaseComparePage({
           {leaseEnded ? (
             <CardContent className="space-y-3">
               {!sealedReport ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[13px] text-muted-foreground">
                   No change report was sealed for this lease.
                 </p>
               ) : sealedReport.changes.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[13px] text-muted-foreground">
                   The sealed report lists no changes.
                 </p>
               ) : (
@@ -842,12 +845,12 @@ export default function LeaseComparePage({
                     <div
                       key={`${item.view_id}-${i}`}
                       className={cn(
-                        "rounded-xl border border-border bg-muted/30 p-4 space-y-2",
+                        "rounded-[20px] border border-dashed border-suggestion/50 bg-suggestion/[0.05] p-4 space-y-2.5",
                         item.reviewState === "dismissed" && "opacity-60",
                       )}
                     >
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant="suggestion">
+                        <Badge variant="suggestion" className="bg-suggestion/12 font-semibold">
                           {item.origin === "manual" ? "Added manually" : "AI suggestion"}
                         </Badge>
                         <Badge variant={item.category === "possible_damage" ? "suggestion" : "default"}>
@@ -862,11 +865,12 @@ export default function LeaseComparePage({
                         </Badge>
                       </div>
                       <div className="flex items-start justify-between gap-2">
-                        <h4 className="font-semibold text-sm">{item.title}</h4>
+                        <h4 className="text-[15px] font-semibold leading-snug tracking-[-0.01em]">{item.title}</h4>
                         {item.worldPosition && activeMatrix && alignmentPassed && (
                           <Button
                             size="sm"
                             variant="ghost"
+                            className="shrink-0 rounded-full text-accent hover:text-accent"
                             onClick={() =>
                               setFlyTo({ position: item.worldPosition!, nonce: Date.now() })
                             }
@@ -875,11 +879,11 @@ export default function LeaseComparePage({
                           </Button>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
+                      <p className="text-[13px] leading-relaxed text-muted-foreground">
                         {item.description}
                       </p>
                       {item.matchedMoveInPinId && (
-                        <p className="text-xs font-medium text-sealed">Matches a move-in pin.</p>
+                        <p className="text-[13px] font-medium text-sealed">Matches a move-in pin.</p>
                       )}
                     </div>
                   ))}
@@ -891,7 +895,7 @@ export default function LeaseComparePage({
               {busy && (
                 <div
                   role="status"
-                  className="flex items-center gap-2.5 rounded-xl border border-border bg-muted/50 px-3.5 py-2.5 text-sm text-foreground"
+                  className="flex items-center gap-2.5 rounded-2xl bg-muted px-4 py-3 text-[14px] text-foreground"
                 >
                   <Loader2 className="h-4 w-4 shrink-0 text-accent motion-safe:animate-spin" />
                   <span>{busy}</span>
@@ -899,19 +903,19 @@ export default function LeaseComparePage({
               )}
 
               {!alignmentPassed && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[13px] text-muted-foreground">
                   Complete the 4-point alignment below and pass the surface-agreement gate to unlock AI comparison.
                 </p>
               )}
 
               {error && (
-                <div className="rounded-xl border border-claim/30 bg-claim/10 px-4 py-2.5 text-xs text-claim">
+                <div className="rounded-2xl bg-claim/[0.08] px-4 py-3 text-[14px] text-claim">
                   {error}
                 </div>
               )}
 
               {aiSource && (
-                <div className="text-xs text-muted-foreground">
+                <div className="text-[13px] text-muted-foreground">
                   {aiSource.startsWith("live")
                     ? `Fresh AI run on these scans${aiSource.includes("(") ? ` ${aiSource.slice(aiSource.indexOf("("))}` : ""}.`
                     : aiSource.startsWith("cache")
@@ -925,12 +929,12 @@ export default function LeaseComparePage({
                   {visibleChanges.map((item) => (
                     <div
                       key={item.id}
-                      className="rounded-xl border border-border bg-muted/30 p-4 space-y-2.5"
+                      className="rounded-[20px] border border-dashed border-suggestion/50 bg-suggestion/[0.05] p-4 space-y-3"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                            <Badge variant="suggestion">
+                          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                            <Badge variant="suggestion" className="bg-suggestion/12 font-semibold">
                               {item.manual ? "Added manually" : "AI suggestion"}
                             </Badge>
                             <Badge
@@ -947,13 +951,14 @@ export default function LeaseComparePage({
                                   : "Filtered artifact"}
                             </Badge>
                           </div>
-                          <h4 className="font-semibold text-sm">{item.title}</h4>
+                          <h4 className="text-[15px] font-semibold leading-snug tracking-[-0.01em]">{item.title}</h4>
                         </div>
 
                         {item.worldPosition && (
                           <Button
                             size="sm"
                             variant="ghost"
+                            className="shrink-0 rounded-full text-accent hover:text-accent"
                             onClick={() =>
                               setFlyTo({
                                 position: item.worldPosition!,
@@ -966,7 +971,7 @@ export default function LeaseComparePage({
                         )}
                       </div>
 
-                      <p className="text-xs text-muted-foreground leading-relaxed">
+                      <p className="text-[13px] leading-relaxed text-muted-foreground">
                         {item.description}
                       </p>
 
@@ -977,9 +982,9 @@ export default function LeaseComparePage({
                             <img
                               src={viewSnapshots[item.view_id].before}
                               alt={`Before: ${item.title}`}
-                              className="w-full aspect-[4/3] object-cover rounded-lg border border-border"
+                              className="w-full aspect-[4/3] object-cover rounded-xl bg-stage ring-1 ring-black/5"
                             />
-                            <figcaption className="text-[10px] text-muted-foreground text-center">
+                            <figcaption className="text-center text-[12px] text-muted-foreground">
                               Before (move-in)
                             </figcaption>
                           </figure>
@@ -988,9 +993,9 @@ export default function LeaseComparePage({
                             <img
                               src={viewSnapshots[item.view_id].after}
                               alt={`After: ${item.title}`}
-                              className="w-full aspect-[4/3] object-cover rounded-lg border border-border"
+                              className="w-full aspect-[4/3] object-cover rounded-xl bg-stage ring-1 ring-black/5"
                             />
-                            <figcaption className="text-[10px] text-muted-foreground text-center">
+                            <figcaption className="text-center text-[12px] text-muted-foreground">
                               After (move-out)
                             </figcaption>
                           </figure>
@@ -998,7 +1003,7 @@ export default function LeaseComparePage({
                       )}
 
                       {item.matchedMoveInPin && (
-                        <div className="rounded-lg border border-sealed/30 bg-sealed/5 px-3 py-2 text-xs text-sealed font-medium">
+                        <div className="rounded-[14px] bg-sealed/10 px-3 py-2.5 text-[13px] font-medium text-sealed">
                           Matches a move-in pin (&ldquo;{item.matchedMoveInPin.text}&rdquo;)
                           {item.matchedMoveInPin.coSigned
                             ? ", co-signed by your landlord."
@@ -1006,9 +1011,10 @@ export default function LeaseComparePage({
                         </div>
                       )}
 
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="grid grid-cols-2 gap-2 pt-1 sm:flex sm:items-center">
                         <Button
                           size="sm"
+                          className="h-11 rounded-xl px-4 text-[14px] sm:h-9 sm:text-[13px]"
                           variant={
                             item.reviewState === "confirmed" ? "default" : "secondary"
                           }
@@ -1028,6 +1034,7 @@ export default function LeaseComparePage({
                         <Button
                           size="sm"
                           variant="ghost"
+                          className="h-11 rounded-xl px-4 text-[14px] text-muted-foreground hover:text-foreground sm:h-9 sm:text-[13px]"
                           onClick={() =>
                             setChanges((prev) =>
                               prev.map((c) =>
@@ -1048,13 +1055,13 @@ export default function LeaseComparePage({
               )}
 
               {/* Manual "Add change" fallback */}
-              <div className="pt-2 border-t border-border flex flex-col sm:flex-row gap-2">
+              <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row">
                 <input
                   type="text"
                   value={manualTitle}
                   onChange={(e) => setManualTitle(e.target.value)}
                   placeholder="Add a change manually (e.g. Dark stain on carpet)"
-                  className="flex-1 h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
+                  className="h-12 flex-1 rounded-2xl border-0 bg-muted px-4 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent sm:text-[15px]"
                 />
                 <select
                   value={manualCategory}
@@ -1063,13 +1070,14 @@ export default function LeaseComparePage({
                       e.target.value as "possible_damage" | "possible_wear",
                     )
                   }
-                  className="h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
+                  className="h-12 rounded-2xl border-0 bg-muted px-4 text-base focus:outline-none focus:ring-2 focus:ring-accent sm:text-[15px]"
                 >
                   <option value="possible_damage">Possible damage</option>
                   <option value="possible_wear">Possibly normal wear</option>
                 </select>
                 <Button
                   variant="secondary"
+                  className="h-12 rounded-2xl px-5 text-[15px]"
                   disabled={!manualTitle.trim()}
                   onClick={() => {
                     setChanges((prev) => [
@@ -1098,7 +1106,7 @@ export default function LeaseComparePage({
         </Card>
 
         {leaseEnded && !sealedAlignment && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             No sealed line-up for this lease is in Keyprint&apos;s index, so the before/after view
             isn&apos;t shown here.
           </p>
@@ -1109,7 +1117,7 @@ export default function LeaseComparePage({
           <Card>
             <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <CardTitle className="text-base">
+                <CardTitle>
                   Line up the move-out scan (4-point alignment)
                 </CardTitle>
                 <CardDescription>
@@ -1117,15 +1125,19 @@ export default function LeaseComparePage({
                 </CardDescription>
               </div>
 
-              <label className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm font-medium cursor-pointer hover:bg-muted focus-within:ring-2 focus-within:ring-accent sm:w-auto sm:min-h-0 sm:py-2 sm:text-xs">
-                <Upload className="h-3.5 w-3.5" />
+              <label className="inline-flex h-12 w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-surface px-5 text-[15px] font-semibold text-foreground shadow-xs ring-1 ring-border transition-colors duration-200 hover:bg-muted focus-within:ring-2 focus-within:ring-accent sm:w-auto">
+                <Upload className="h-4 w-4" />
                 Import move-out .glb
                 <input
                   type="file"
-                  accept=".glb,model/gltf-binary"
                   className="sr-only"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
+                    if (f && !isGlbFile(f)) {
+                      window.alert(NOT_A_GLB_MESSAGE);
+                      e.target.value = "";
+                      return;
+                    }
                     if (f) {
                       setMoveOutFile(f);
                       setMoveOutName(f.name);
@@ -1138,7 +1150,7 @@ export default function LeaseComparePage({
               </label>
             </CardHeader>
             {/* AlignmentTool's toolbar is the only flex row with direct button children: let it wrap on phones. */}
-            <CardContent className="[&_div:has(>button)]:flex-wrap">
+            <CardContent className="tabular-nums [&_div:has(>button)]:flex-wrap">
               {moveInUrl ? (
                 <AlignmentTool
                   // A new move-out file starts a fresh line-up: no stale taps, scene or result.

@@ -33,6 +33,38 @@ interface ModelSceneProps {
   modelMatrix?: number[] | null;
 }
 
+/** Stage colour behind every 3D scan (matches the `bg-stage` token). */
+export const STAGE_COLOR = "#08142a";
+
+/**
+ * Photogrammetry scans carry their lighting baked into the texture, so scene lights plus tone
+ * mapping only dim them. Swap every textured material on a CLONED scene for an unlit one that
+ * shows the texture as captured. Untextured meshes keep their lit material. Geometry, UVs and the
+ * texture itself are untouched (AI views come from OffscreenRenderer, which loads its own copy).
+ */
+export function makeScanUnlit(root: THREE.Object3D): THREE.Object3D {
+  const toUnlit = (material: THREE.Material): THREE.Material => {
+    const map = (material as THREE.MeshStandardMaterial).map;
+    if (!map) return material;
+    map.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshBasicMaterial({
+      map,
+      vertexColors: material.vertexColors,
+      side: material.side,
+      transparent: material.transparent,
+      opacity: material.opacity,
+    });
+  };
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.material) return;
+    mesh.material = Array.isArray(mesh.material)
+      ? mesh.material.map(toUnlit)
+      : toUnlit(mesh.material);
+  });
+  return root;
+}
+
 function LoadedRoom({
   url,
   pins,
@@ -46,7 +78,7 @@ function LoadedRoom({
   const { scene } = useGLTF(url);
   // Clone so two side-by-side viewers never mutate each other's scene graph,
   // while keeping world coordinates strictly identical to the file's coordinates.
-  const cloned = useMemo(() => scene.clone(true), [scene]);
+  const cloned = useMemo(() => makeScanUnlit(scene.clone(true)), [scene]);
   const groupRef = useRef<THREE.Group | null>(null);
   const matrixKey = modelMatrix && modelMatrix.length === 16 ? modelMatrix.join(",") : "";
 
@@ -168,14 +200,14 @@ function LoadOverlay() {
   const { active, progress } = useProgress();
   if (!active) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center bg-muted/80 backdrop-blur-[2px]">
-      <div className="w-44 h-2 rounded-full bg-border overflow-hidden">
+    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center bg-stage/90">
+      <div className="h-1 w-44 overflow-hidden rounded-full bg-white/10">
         <div
-          className="h-full bg-accent transition-all duration-150"
+          className="h-full rounded-full bg-accent-bright transition-[width] duration-150"
           style={{ width: `${Math.round(progress)}%` }}
         />
       </div>
-      <span className="mt-2 text-xs font-medium text-muted-foreground">
+      <span className="mt-3 text-[13px] font-medium tabular-nums text-white/70">
         Loading 3D room… {Math.round(progress)}%
       </span>
     </div>
@@ -214,11 +246,11 @@ export function RoomViewer({
 
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-2xl border border-border bg-[#ebe6de] ${heightClassName}`}
+      className={`relative isolate w-full overflow-hidden rounded-[20px] bg-stage ring-1 ring-white/10 shadow-[0_30px_80px_-20px_rgba(10,26,51,0.45)] ${heightClassName}`}
     >
       <LoadOverlay />
       {hint && (
-        <div className="pointer-events-none absolute top-3 left-3 z-10 rounded-full bg-surface/90 backdrop-blur-xs border border-border px-3 py-1 text-xs font-medium text-foreground shadow-xs">
+        <div className="pointer-events-none absolute top-3 left-3 z-10 max-w-[calc(100%-7rem)] rounded-[14px] border border-white/15 bg-black/55 px-3 py-1.5 text-[12px] font-medium leading-snug text-white sm:rounded-full">
           {hint}
         </div>
       )}
@@ -227,17 +259,20 @@ export function RoomViewer({
         onClick={() => setResetNonce((n) => n + 1)}
         title="Reset camera view"
         aria-label="Reset camera view"
-        className="absolute top-3 right-3 z-10 inline-flex items-center gap-1 rounded-full bg-surface/90 hover:bg-surface backdrop-blur-xs border border-border px-2.5 py-1 text-xs font-medium text-foreground shadow-xs cursor-pointer"
+        className="group absolute top-1.5 right-1.5 z-10 inline-flex h-11 cursor-pointer items-center px-1.5 focus-visible:outline-none"
       >
-        <RotateCcw className="h-3 w-3" />
-        <span>Reset</span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-[12px] font-medium text-white transition-colors duration-200 group-hover:bg-black/70 group-focus-visible:ring-2 group-focus-visible:ring-accent-bright">
+          <RotateCcw className="h-3 w-3" />
+          <span>Reset</span>
+        </span>
       </button>
       <Canvas
+        flat
         dpr={[1, 1.5]}
         camera={{ fov: 48, near: 0.05, far: 100 }}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
       >
-        <color attach="background" args={["#ebe6de"]} />
+        <color attach="background" args={[STAGE_COLOR]} />
         <Suspense fallback={null}>
           <LoadedRoom
             url={url}
@@ -251,6 +286,10 @@ export function RoomViewer({
           />
         </Suspense>
       </Canvas>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_40%,transparent_55%,rgba(0,0,0,0.5))]"
+      />
     </div>
   );
 }

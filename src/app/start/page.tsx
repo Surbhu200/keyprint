@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Fingerprint, ShieldCheck } from "lucide-react";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
+import { ArrowRight, ScanFace, ShieldCheck } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
 import { usePasskeySession } from "@/components/usePasskeySession";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -133,42 +134,63 @@ export default function StartPage() {
     <div className="min-h-screen flex flex-col">
       <AppNav />
 
-      <main className="flex-1 flex items-center justify-center px-5 py-8 sm:py-12">
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-2">
-            <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent">
-              <Fingerprint className="h-5 w-5" />
+      <main className="flex-1 flex items-start justify-center px-4 py-6 sm:items-center sm:py-12">
+        <Card className="w-full max-w-[460px] max-sm:bg-transparent max-sm:shadow-none">
+          <CardHeader className="space-y-0 gap-4 max-sm:px-1 sm:gap-6 sm:px-10 sm:pt-10 sm:pb-7">
+            <div className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] bg-ink text-white shadow-[0_10px_24px_-10px_rgba(10,26,51,0.6)]">
+              <ScanFace className="h-6 w-6" />
             </div>
-            <CardTitle className="text-2xl">
+            <CardTitle className="max-w-[14ch] font-display font-semibold text-[36px] leading-[1.05] tracking-[-0.03em] text-balance">
               {session ? `Welcome back, ${session.username}` : "Protect your deposit"}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="-mt-1 text-[16px] leading-[1.5] sm:-mt-2">
               {session
                 ? "Your passkey is ready on this device. One touch seals records and approves settlements."
                 : "Sign in with Face ID, Touch ID, or Windows Hello. No passwords or recovery phrases."}
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-5">
+          <CardContent className="space-y-6 max-sm:px-1 sm:px-10 sm:pb-10">
             {session ? (
               <div className="space-y-3">
                 <Link
                   href="/home"
-                  className={cn(buttonVariants({ size: "lg" }), "w-full")}
+                  className={cn(
+                    buttonVariants({ size: "lg" }),
+                    "w-full h-14 rounded-[18px] bg-ink text-white text-[17px] hover:bg-ink-2",
+                  )}
                 >
                   Open my apartments
                   <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link
                   href="/unit/new"
-                  className={cn(buttonVariants({ variant: "secondary" }), "w-full")}
+                  className={cn(
+                    buttonVariants({ variant: "secondary" }),
+                    "w-full h-12 rounded-2xl text-[15px]",
+                  )}
                 >
                   Seal a solo apartment scan
                 </Link>
               </div>
             ) : (
               <form onSubmit={handleCreate} className="space-y-4">
-                <div className="space-y-1.5">
+                <ol className="space-y-3 pb-1">
+                  {[
+                    "Scan your apartment at move-in",
+                    "Seal it with one Face ID touch",
+                    "No claim by the deadline? It comes back to you",
+                  ].map((line, i) => (
+                    <li key={line} className="flex items-center gap-3 text-[15px] leading-snug">
+                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[13px] font-semibold tabular-nums text-foreground">
+                        {i + 1}
+                      </span>
+                      {line}
+                    </li>
+                  ))}
+                </ol>
+
+                <div className="space-y-2">
                   <label
                     htmlFor="name"
                     className="text-sm font-medium text-foreground"
@@ -183,14 +205,14 @@ export default function StartPage() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Alex Rivera"
-                    className="w-full h-12 sm:h-11 rounded-lg border border-border bg-background px-3.5 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                    className="w-full h-14 rounded-2xl border-0 bg-muted px-4 text-[17px] placeholder:text-muted-foreground/70 transition-shadow duration-200 focus:outline-none focus:ring-2 focus:ring-accent"
                   />
                 </div>
 
                 {error && (
                   <div
                     role="alert"
-                    className="rounded-xl border border-claim/30 bg-claim/10 px-3.5 py-2.5 text-sm leading-snug text-claim space-y-1"
+                    className="rounded-2xl border-0 bg-claim/8 p-3.5 text-[14px] leading-snug text-claim space-y-1"
                   >
                     <p>{error.message}</p>
                     {error.detail && error.detail !== error.message && (
@@ -202,19 +224,31 @@ export default function StartPage() {
                 <Button
                   type="submit"
                   size="lg"
-                  className="w-full h-auto min-h-12 whitespace-normal py-3 text-center leading-snug"
+                  className="w-full h-auto min-h-14 whitespace-normal rounded-[18px] bg-ink py-3.5 text-center text-[17px] leading-snug text-white hover:bg-ink-2"
                   disabled={busy !== null}
                 >
-                  <Fingerprint className="h-4 w-4 shrink-0" />
-                  {busy === "register"
-                    ? STEP_LABEL[step ?? "preparing"]
-                    : "Create account with one touch"}
+                  <ScanFace className="h-5 w-5 shrink-0" />
+                  <MotionConfig reducedMotion="user">
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.span
+                      key={busy === "register" ? (step ?? "preparing") : "idle"}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      {busy === "register"
+                        ? STEP_LABEL[step ?? "preparing"]
+                        : "Create account with one touch"}
+                    </motion.span>
+                  </AnimatePresence>
+                  </MotionConfig>
                 </Button>
 
                 <Button
                   type="button"
-                  variant="secondary"
-                  className="w-full h-auto min-h-11 whitespace-normal py-2.5 text-center leading-snug"
+                  variant="ghost"
+                  className="w-full h-auto min-h-12 whitespace-normal rounded-2xl py-2.5 text-center text-[15px] leading-snug text-accent hover:bg-accent/5 hover:text-accent"
                   disabled={busy !== null}
                   onClick={handleReturning}
                 >
@@ -223,7 +257,7 @@ export default function StartPage() {
               </form>
             )}
 
-            <div className="rounded-xl bg-muted/60 p-3.5 flex items-start gap-2.5 text-sm text-muted-foreground">
+            <div className="rounded-2xl bg-muted/70 p-4 flex items-start gap-2.5 text-[14px] leading-snug text-muted-foreground">
               <ShieldCheck className="h-4 w-4 text-sealed shrink-0 mt-0.5" />
               <span>
                 Your passkey stays on your device; Keyprint never holds it.

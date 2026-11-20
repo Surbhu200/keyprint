@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRight,
+  ChevronRight,
   Clock,
   Home,
   Plus,
+  ScanFace,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import {
   decodeEventLog,
@@ -358,45 +358,51 @@ export default function HomePage() {
 
       <main className="flex-1 mx-auto w-full max-w-5xl px-5 py-8 space-y-6">
         {/* Hero deposit card */}
-        <Card className="border-sealed/20 bg-surface">
-          <CardContent className="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-sealed">
-                <ShieldCheck className="h-4 w-4" />
-                <span>Protected Deposits</span>
+        <section className="vault p-6 sm:p-8 motion-safe:animate-rise">
+          <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-3">
+              <div className="eyebrow inline-flex items-center gap-1.5 text-white/60">
+                <ShieldCheck className="h-4 w-4 text-sealed-bright" />
+                <span>Protected deposits</span>
               </div>
-              <div className="text-4xl font-semibold tracking-tight flex flex-wrap items-baseline gap-3">
-                <span>
-                  {formatDollars(totalProtected)}{" "}
-                  <span className="text-lg font-normal text-muted-foreground">
-                    protected
-                  </span>
-                </span>
-                {session && availableBalance !== null && (
-                  <Badge variant="default" className="text-xs font-medium">
-                    {formatDollars(availableBalance)} available
-                  </Badge>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">
+              {session ? (
+                <div className="space-y-2">
+                  <div className="money text-[52px] sm:text-[64px] text-white">
+                    {formatDollars(totalProtected)}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <span className="text-[15px] text-white/65">protected</span>
+                    {availableBalance !== null && (
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-medium text-white/85 tabular-nums">
+                        {formatDollars(availableBalance)} available
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <h1 className="max-w-[18ch] font-display text-[34px] leading-[1.05] font-semibold tracking-[-0.03em] text-white text-balance sm:text-[44px]">
+                  Seal your <span className="whitespace-nowrap">move-in</span> in one touch
+                </h1>
+              )}
+              <p className="max-w-[46ch] text-[14px] leading-relaxed text-white/60">
                 {session
                   ? `Signed in as ${session.username}. Neither your landlord nor Keyprint can move protected funds outside the lease rules.`
                   : "Sign in with your passkey to protect a deposit or seal a solo move-in scan."}
               </p>
             </div>
 
-            <div className="grid gap-2.5 sm:flex sm:flex-wrap">
+            <div className="grid gap-2 sm:flex sm:shrink-0 sm:flex-wrap sm:justify-end">
               <Link
                 href="/unit/new"
-                className={cn(buttonVariants({ variant: "default" }), "w-full sm:w-auto")}
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 text-[15px] font-semibold text-ink transition-[transform,background-color] duration-100 hover:bg-white/90 motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               >
-                <Sparkles className="h-4 w-4" />
+                <ScanFace className="h-4 w-4" />
                 Start solo scan
               </Link>
               {session && (
                 <Button
                   variant="secondary"
-                  className="w-full sm:w-auto"
+                  className="h-12 w-full rounded-2xl border-0 bg-white/10 px-5 text-[15px] text-white shadow-none ring-0 hover:bg-white/15 sm:w-auto"
                   onClick={() => setShowCreate((v) => !v)}
                 >
                   <Plus className="h-4 w-4" />
@@ -406,14 +412,17 @@ export default function HomePage() {
               {!session && (
                 <Link
                   href="/start"
-                  className={cn(buttonVariants({ variant: "secondary" }), "w-full sm:w-auto")}
+                  className={cn(
+                    buttonVariants({ variant: "secondary" }),
+                    "h-12 w-full rounded-2xl border-0 bg-white/10 px-5 text-[15px] text-white shadow-none ring-0 hover:bg-white/15 sm:w-auto",
+                  )}
                 >
                   Sign in
                 </Link>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         {showCreate && session && (
           <Card>
@@ -429,7 +438,7 @@ export default function HomePage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-auto min-h-11 w-full justify-start whitespace-normal px-3.5 py-2 text-left text-sm leading-snug sm:min-h-9 sm:w-auto sm:py-1.5 sm:text-xs"
+                    className="h-auto min-h-11 w-full justify-start whitespace-normal rounded-full border-0 bg-surface px-4 py-2 text-left text-[14px] font-medium leading-snug ring-1 ring-border hover:bg-muted sm:min-h-10 sm:w-auto"
                     onClick={() => {
                       setUnitName("Lease A · Apt 302");
                       setDepositDollars("200");
@@ -442,7 +451,7 @@ export default function HomePage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-auto min-h-11 w-full justify-start whitespace-normal px-3.5 py-2 text-left text-sm leading-snug sm:min-h-9 sm:w-auto sm:py-1.5 sm:text-xs"
+                    className="h-auto min-h-11 w-full justify-start whitespace-normal rounded-full border-0 bg-surface px-4 py-2 text-left text-[14px] font-medium leading-snug ring-1 ring-border hover:bg-muted sm:min-h-10 sm:w-auto"
                     onClick={() => {
                       setUnitName("Lease B · Apt 404 (no-claim refund)");
                       setDepositDollars("100");
@@ -458,17 +467,17 @@ export default function HomePage() {
             <CardContent>
               <form onSubmit={handleCreateLease} className="space-y-4">
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
+                  <label className="space-y-1.5 text-[13px] font-medium block text-muted-foreground">
                     <span>Apartment name</span>
                     <input
                       type="text"
                       required
                       value={unitName}
                       onChange={(e) => setUnitName(e.target.value)}
-                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
+                      className="w-full h-12 rounded-2xl border-0 bg-muted px-4 text-[16px] text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
                     />
                   </label>
-                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
+                  <label className="space-y-1.5 text-[13px] font-medium block text-muted-foreground">
                     <span>Security deposit ($)</span>
                     <input
                       type="number"
@@ -477,10 +486,10 @@ export default function HomePage() {
                       required
                       value={depositDollars}
                       onChange={(e) => setDepositDollars(e.target.value)}
-                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
+                      className="w-full h-12 rounded-2xl border-0 bg-muted px-4 text-[16px] text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
                     />
                   </label>
-                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
+                  <label className="space-y-1.5 text-[13px] font-medium block text-muted-foreground">
                     <span>Renter account ID (from their Details drawer)</span>
                     <input
                       type="text"
@@ -491,10 +500,10 @@ export default function HomePage() {
                       autoCapitalize="none"
                       autoCorrect="off"
                       spellCheck={false}
-                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm font-mono"
+                      className="w-full h-12 rounded-2xl border-0 bg-muted px-4 text-[16px] text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-accent"
                     />
                   </label>
-                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
+                  <label className="space-y-1.5 text-[13px] font-medium block text-muted-foreground">
                     <span>Dispute reviewer account ID (prefilled with the demo reviewer)</span>
                     <input
                       type="text"
@@ -505,10 +514,10 @@ export default function HomePage() {
                       autoCapitalize="none"
                       autoCorrect="off"
                       spellCheck={false}
-                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm font-mono"
+                      className="w-full h-12 rounded-2xl border-0 bg-muted px-4 text-[16px] text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-accent"
                     />
                   </label>
-                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
+                  <label className="space-y-1.5 text-[13px] font-medium block text-muted-foreground">
                     <span>Claim / response / review windows (minutes, min 1)</span>
                     <input
                       type="number"
@@ -516,10 +525,10 @@ export default function HomePage() {
                       required
                       value={windowMinutes}
                       onChange={(e) => setWindowMinutes(e.target.value)}
-                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
+                      className="w-full h-12 rounded-2xl border-0 bg-muted px-4 text-[16px] text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
                     />
                   </label>
-                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
+                  <label className="space-y-1.5 text-[13px] font-medium block text-muted-foreground">
                     <span>Lease ends in (minutes from now; 0 = move-out allowed right away)</span>
                     <input
                       type="number"
@@ -527,23 +536,23 @@ export default function HomePage() {
                       required
                       value={leaseEndOffsetMin}
                       onChange={(e) => setLeaseEndOffsetMin(e.target.value)}
-                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
+                      className="w-full h-12 rounded-2xl border-0 bg-muted px-4 text-[16px] text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
                     />
                   </label>
                 </div>
 
                 {createError && (
-                  <p className="text-xs text-claim">{createError}</p>
+                  <p className="text-[13px] text-claim">{createError}</p>
                 )}
 
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-                  <Button type="submit" disabled={creating} className="w-full sm:w-auto">
+                  <Button type="submit" disabled={creating} className="h-12 w-full rounded-2xl px-6 text-[15px] sm:w-auto">
                     {creating ? "Creating lease…" : "Create lease with one touch"}
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
-                    className="w-full sm:w-auto"
+                    className="h-12 w-full rounded-2xl sm:w-auto"
                     onClick={() => setShowCreate(false)}
                   >
                     Cancel
@@ -598,10 +607,10 @@ export default function HomePage() {
         {/* Leases list */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold tracking-tight">Your apartments</h2>
+            <h2 className="text-[20px] font-semibold tracking-[-0.01em]">Your apartments</h2>
             <Link
               href="/sample"
-              className="text-xs font-medium text-accent hover:underline"
+              className="inline-flex min-h-11 items-center text-[13px] font-medium text-accent hover:underline"
             >
               View sample apartment
             </Link>
@@ -633,7 +642,7 @@ export default function HomePage() {
               {[0, 1].map((i) => (
                 <div
                   key={i}
-                  className="space-y-3 rounded-2xl border border-border bg-surface p-6"
+                  className="card-soft space-y-3 p-6"
                 >
                   <div className="h-5 w-1/2 rounded-md bg-muted motion-safe:animate-pulse" />
                   <div className="h-4 w-1/3 rounded-md bg-muted motion-safe:animate-pulse" />
@@ -699,13 +708,29 @@ export default function HomePage() {
                 const hasOpenClaims =
                   onchain !== null && state === 2 && onchain.activeClaimedTotal > 0n;
 
+                const railClass =
+                  state === 3
+                    ? "bg-sealed"
+                    : state === 2
+                      ? "bg-suggestion"
+                      : state === 1
+                        ? "bg-accent"
+                        : "bg-border";
+
                 return (
-                  <Card key={meta.lease_id}>
-                    <CardContent className="p-6 space-y-4">
+                  <Card
+                    key={meta.lease_id}
+                    className="relative overflow-hidden card-soft motion-safe:animate-rise"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn("absolute inset-y-0 left-0 w-1", railClass)}
+                    />
+                    <CardContent className="p-5 pl-6 sm:p-6 sm:pl-7 space-y-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-lg font-semibold">{meta.unit_name}</h3>
+                            <h3 className="text-[17px] font-semibold tracking-[-0.01em]">{meta.unit_name}</h3>
                             {role && (
                               <Badge variant="accent" className="whitespace-nowrap">
                                 {role}
@@ -731,20 +756,32 @@ export default function HomePage() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {onchain
-                              ? state === 3
-                                ? `${formatDollars(onchain.renterPayout)} returned to renter · ${formatDollars(onchain.landlordPayout)} paid to landlord`
-                                : `${formatDollars(onchain.deposit)} deposit`
-                              : "Waiting for live status"}
+                            {onchain ? (
+                              state === 3 ? (
+                                `${formatDollars(onchain.renterPayout)} returned to renter · ${formatDollars(onchain.landlordPayout)} paid to landlord`
+                              ) : (
+                                <span className="inline-flex items-baseline gap-1.5 pt-1">
+                                  <span className="money text-[22px] text-foreground">
+                                    {formatDollars(onchain.deposit)}
+                                  </span>
+                                  <span>deposit</span>
+                                </span>
+                              )
+                            ) : (
+                              "Waiting for live status"
+                            )}
                           </p>
                         </div>
 
                         <Link
                           href={nextHref}
-                          className={cn(buttonVariants({ variant: "default" }), "w-full sm:w-auto")}
+                          className={cn(
+                            buttonVariants({ variant: "default" }),
+                            "h-12 rounded-2xl bg-foreground px-5 text-[15px] text-background hover:bg-foreground/90 max-sm:w-full",
+                          )}
                         >
                           Open apartment
-                          <ArrowRight className="h-4 w-4" />
+                          <ChevronRight className="h-4 w-4" />
                         </Link>
                       </div>
 

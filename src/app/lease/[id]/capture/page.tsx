@@ -5,9 +5,9 @@ import Link from "next/link";
 import { encodeFunctionData, erc20Abi, type Hex } from "viem";
 import {
   Camera,
-  CheckCircle2,
   Fingerprint,
   MapPin,
+  ScanFace,
   ShieldCheck,
   Trash2,
   Upload,
@@ -47,6 +47,7 @@ import {
 } from "@/lib/evidence/manifest";
 import { saveRecordManifests } from "@/lib/evidence/record-store";
 import { REFERENCE_MOVE_IN_URL, REFERENCE_SPOTS } from "@/lib/sample/reference";
+import { isGlbFile, NOT_A_GLB_MESSAGE } from "@/lib/scan-file";
 import { uploadToPrivateStorage } from "@/lib/supabase/upload";
 import { cn } from "@/lib/utils";
 
@@ -400,10 +401,14 @@ export default function LeaseCapturePage({
                     Import custom .glb
                     <input
                       type="file"
-                      accept=".glb,model/gltf-binary"
                       className="sr-only"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
+                        if (f && !isGlbFile(f)) {
+                          window.alert(NOT_A_GLB_MESSAGE);
+                          e.target.value = "";
+                          return;
+                        }
                         if (f) {
                           setScanFile(f);
                           setScanName(f.name);
@@ -436,10 +441,10 @@ export default function LeaseCapturePage({
 
           <div className="space-y-4">
             {pendingTap && !alreadyFunded && (
-              <Card className="border-accent/40 transition-[translate,opacity] duration-200 ease-out motion-reduce:transition-none max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-40 max-lg:mb-0 max-lg:max-h-[80svh] max-lg:overflow-y-auto max-lg:rounded-b-none max-lg:border-x-0 max-lg:border-b-0 max-lg:pb-[env(safe-area-inset-bottom)] max-lg:shadow-[0_-12px_32px_rgba(22,22,22,0.16)] max-lg:starting:translate-y-6 max-lg:starting:opacity-0">
+              <Card className="border-accent/40 transition-[translate,opacity] duration-200 ease-out motion-reduce:transition-none max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-40 max-lg:mb-0 max-lg:max-h-[80svh] max-lg:overflow-y-auto max-lg:rounded-b-none max-lg:border-x-0 max-lg:border-b-0 max-lg:pb-[env(safe-area-inset-bottom)] max-lg:rounded-t-[28px] max-lg:shadow-[0_-12px_40px_-8px_rgba(0,0,0,0.25)] max-lg:starting:translate-y-6 max-lg:starting:opacity-0">
                 <div
                   aria-hidden="true"
-                  className="mx-auto mt-2 h-1 w-10 rounded-full bg-border lg:hidden"
+                  className="mx-auto mt-2.5 h-[5px] w-9 rounded-full bg-black/15 lg:hidden"
                 />
                 <CardHeader className="pb-3 max-lg:px-4 max-lg:pt-2 max-lg:pb-2">
                   <CardTitle className="text-base flex items-center gap-1.5">
@@ -454,9 +459,9 @@ export default function LeaseCapturePage({
                     onChange={(e) => setPinText(e.target.value)}
                     placeholder="Scratch on desk, already here"
                     aria-label="Describe the existing damage"
-                    className="w-full h-11 rounded-lg border border-border bg-background px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                    className="w-full h-12 rounded-2xl border-0 bg-muted px-4 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                   />
-                  <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-3 text-sm font-medium text-foreground hover:bg-muted focus-within:ring-2 focus-within:ring-accent">
+                  <label className="flex h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-muted/40 px-3 text-sm font-medium text-foreground hover:bg-muted focus-within:ring-2 focus-within:ring-accent">
                     <Camera className="h-4 w-4 shrink-0 text-accent" />
                     <span className="min-w-0 truncate">
                       {pinPhoto
@@ -471,10 +476,14 @@ export default function LeaseCapturePage({
                     />
                   </label>
                   <div className="flex gap-2">
-                    <Button onClick={handleAddPin} className="flex-1">
+                    <Button onClick={handleAddPin} className="h-12 flex-1 rounded-2xl text-[15px]">
                       Already here
                     </Button>
-                    <Button variant="ghost" onClick={() => setPendingTap(null)}>
+                    <Button
+                      variant="ghost"
+                      className="h-12 rounded-2xl"
+                      onClick={() => setPendingTap(null)}
+                    >
                       Cancel
                     </Button>
                   </div>
@@ -611,11 +620,11 @@ export default function LeaseCapturePage({
                   ) : (
                     <Button
                       size="lg"
-                      className="w-full h-auto min-h-12 whitespace-normal py-3 leading-snug max-lg:hidden"
+                      className="w-full h-auto min-h-14 whitespace-normal rounded-[18px] bg-ink py-3.5 text-[17px] leading-snug text-white hover:bg-ink-2 max-lg:hidden"
                       disabled={busy !== null || !live.lease}
                       onClick={handleSealAndPay}
                     >
-                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      <ScanFace className="h-5 w-5 shrink-0" />
                       {busy ??
                         (live.lease
                           ? `Seal & protect ${formatDollars(live.lease.deposit)}`
@@ -629,7 +638,7 @@ export default function LeaseCapturePage({
             {alreadyFunded && (
               <Link
                 href={`/lease/${leaseId}/room`}
-                className={cn(buttonVariants({ size: "lg" }), "w-full")}
+                className={cn(buttonVariants({ size: "lg" }), "h-12 w-full rounded-2xl")}
               >
                 Open 3D room &amp; pins
               </Link>
@@ -639,33 +648,40 @@ export default function LeaseCapturePage({
 
         {/* Phones: the seal action stays in reach (desktop keeps the in-card button). */}
         {isRenter && live.lease && !alreadyFunded && !sealedInfo && !pendingTap && (
-          <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(22,22,22,0.08)] backdrop-blur-md">
-            {error && <p className="mb-2 text-sm text-claim">{error}</p>}
-            <p className="mb-2 text-center text-xs text-muted-foreground">
-              Paying accepts the Deposit Terms on this page.
-            </p>
+          <div className="lg:hidden fixed inset-x-3 bottom-3 z-40 rounded-[28px] bg-surface/90 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] ring-1 ring-black/5 shadow-[0_12px_40px_-12px_rgba(14,17,22,0.35)] backdrop-blur-xl">
+            {error && <p className="mb-2 px-1 text-sm text-claim">{error}</p>}
+            <div className="flex items-baseline justify-between px-1 pb-2">
+              <span className="text-[13px] text-muted-foreground">Deposit</span>
+              <span className="money text-[22px] text-foreground">
+                {formatDollars(live.lease.deposit)}
+              </span>
+            </div>
             <Button
               size="lg"
-              className="w-full h-auto min-h-12 whitespace-normal py-3 leading-snug"
+              className="w-full h-auto min-h-14 whitespace-normal rounded-[18px] bg-ink py-3.5 text-[17px] font-semibold leading-snug text-white hover:bg-ink-2"
               disabled={busy !== null || !live.lease}
               onClick={handleSealAndPay}
             >
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <ScanFace className="h-5 w-5 shrink-0" />
               {busy ?? `Seal & protect ${formatDollars(live.lease.deposit)}`}
             </Button>
+            <p className="mt-2 text-center text-[12px] text-muted-foreground">
+              Paying accepts the Deposit Terms on this page.
+            </p>
           </div>
         )}
 
         {/* Phones: confirm the seal right where the renter tapped. */}
         {sealedInfo && live.lease && (
-          <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 space-y-3 border-t border-border bg-surface px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(22,22,22,0.08)]">
+          <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 space-y-3 rounded-t-[28px] border-0 bg-surface px-4 pt-1 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-12px_40px_-8px_rgba(14,17,22,0.25)]">
             <SealAnimation
+              size="hero"
               title={`${formatDollars(live.lease.deposit)} deposit protected`}
               sealedAtIso={sealedInfo.sealedAt}
             />
             <Link
               href={`/lease/${leaseId}/room`}
-              className={cn(buttonVariants({ size: "lg" }), "w-full")}
+              className={cn(buttonVariants({ size: "lg" }), "h-12 w-full rounded-2xl")}
             >
               Open 3D room &amp; pins
             </Link>

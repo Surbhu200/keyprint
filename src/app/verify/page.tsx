@@ -284,7 +284,7 @@ function VerifyContent() {
           <Badge>No login</Badge>
           <Badge>File never leaves your device</Badge>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-balance">
+        <h1 className="font-display text-[40px] font-semibold leading-[1.02] tracking-[-0.035em] text-balance sm:text-[52px]">
           Don&apos;t trust Keyprint. Verify it.
         </h1>
         <p className="text-base leading-relaxed text-muted-foreground">
@@ -439,7 +439,7 @@ function VerifyContent() {
                 <div className="space-y-3 rounded-xl border border-border bg-surface p-4">
                   <dl className="space-y-3 text-xs">
                     <div className="space-y-1">
-                      <dt className="font-semibold uppercase tracking-wider text-muted-foreground">
+                      <dt className="text-[13px] font-medium text-muted-foreground">
                         File fingerprint (SHA-256)
                       </dt>
                       <dd className="break-all font-mono text-foreground">
@@ -448,7 +448,7 @@ function VerifyContent() {
                     </div>
                     {result.recordId && (
                       <div className="space-y-1">
-                        <dt className="font-semibold uppercase tracking-wider text-muted-foreground">
+                        <dt className="text-[13px] font-medium text-muted-foreground">
                           Sealed record ID
                         </dt>
                         <dd className="break-all font-mono text-foreground">

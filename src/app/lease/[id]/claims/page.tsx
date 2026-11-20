@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   DollarSign,
+  MapPin,
   Plus,
   ShieldAlert,
   Trash2,
@@ -603,6 +604,15 @@ export default function LeaseClaimsPage({
     viewerUrl && viewerUrl === moveOutScanUrl && sealedAlignment ? sealedAlignment.matrix : null;
 
   const depositText = live.lease ? formatDollars(live.lease.deposit) : "the deposit";
+  // Display only: share of the deposit currently claimed, in tenths of a percent (bigint math).
+  const claimedPct = live.lease
+    ? Math.min(
+        100,
+        live.lease.deposit > 0n
+          ? Number((live.lease.activeClaimedTotal * 1000n) / live.lease.deposit) / 10
+          : 0,
+      )
+    : 0;
   const claimCountdownActive = isLandlord
     ? `You have until zero to file priced claims. If you file nothing, the full ${depositText} goes back to your renter.`
     : `Your landlord has until zero to file priced claims. If nothing is filed, your full ${depositText} comes back.`;
@@ -615,26 +625,29 @@ export default function LeaseClaimsPage({
     <LeaseShell leaseId={leaseId} live={live}>
       <div className="space-y-6">
         {live.lease?.state === 3 && (
-          <Card className="border-sealed/30 bg-sealed/5">
-            <CardContent className="p-5 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="h-5 w-5 text-sealed" />
+          <section className="vault p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-sealed-bright" />
                 <div>
-                  <div className="font-semibold text-sealed">Deposit settled</div>
-                  <p className="text-sm text-foreground">
-                    {formatDollars(live.lease.landlordPayout)} paid to landlord ·{" "}
+                  <div className="text-[17px] font-semibold text-white">Deposit settled</div>
+                  <p className="mt-0.5 text-[14px] leading-snug text-white/70 tabular-nums">
+                    {formatDollars(live.lease.landlordPayout)} paid to landlord,{" "}
                     {formatDollars(live.lease.renterPayout)} returned to renter.
                   </p>
                 </div>
               </div>
               <Link
                 href={`/lease/${leaseId}/settle`}
-                className={cn(buttonVariants({ variant: "default" }))}
+                className={cn(
+                  buttonVariants({ variant: "default" }),
+                  "h-12 shrink-0 rounded-2xl bg-white px-5 text-[15px] text-ink hover:bg-white/90 max-sm:w-full",
+                )}
               >
                 Open settlement receipt
               </Link>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
 
         {claimWindowDeadline && live.lease && (
@@ -667,6 +680,40 @@ export default function LeaseClaimsPage({
 
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-4">
+            {live.lease && (
+              <section className="card-soft p-5 sm:p-6">
+                <div className="text-[13px] text-muted-foreground">Claimed</div>
+                <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="money font-display text-[34px] text-claim">
+                    {formatDollars(live.lease.activeClaimedTotal)}
+                  </span>
+                  <span className="text-[15px] text-muted-foreground tabular-nums">
+                    of {formatDollars(live.lease.deposit)}
+                  </span>
+                </div>
+                <div
+                  role="img"
+                  aria-label={`${formatDollars(live.lease.activeClaimedTotal)} of ${formatDollars(live.lease.deposit)} claimed`}
+                  className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-[#b8892a]"
+                >
+                  <div
+                    className="h-full bg-claim shadow-[1px_0_0_0_var(--color-surface)] transition-[width] duration-500 ease-out-expo motion-reduce:transition-none"
+                    style={{ width: `${claimedPct}%` }}
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span aria-hidden="true" className="h-2 w-2 rounded-full bg-claim" />
+                    Claimed by landlord
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#b8892a]" />
+                    Back to renter
+                  </span>
+                </div>
+              </section>
+            )}
+
             {viewerUrl ? (
               <RoomViewer
                 url={viewerUrl}
@@ -689,24 +736,25 @@ export default function LeaseClaimsPage({
                 }
               />
             ) : (
-              <div className="rounded-2xl border border-border bg-muted/40 p-6 text-sm text-muted-foreground">
+              <div className="rounded-[20px] bg-muted p-6 text-[14px] text-muted-foreground">
                 The 3D record for this lease isn&apos;t available yet.
               </div>
             )}
 
             {isLandlord && claimWindowOpen && !sealedAlignment && (
-              <div className="rounded-xl border border-suggestion/30 bg-suggestion/10 px-4 py-2.5 text-xs text-foreground">
+              <div className="rounded-2xl bg-suggestion/10 px-4 py-3 text-[13px] leading-snug text-foreground">
                 The move-in and move-out scans haven&apos;t been lined up and sealed for this lease yet, so claims
                 can&apos;t be pinned. Line them up on the Compare screen first.
               </div>
             )}
 
             {canFileMore && usesPlaceholderModel && (
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-muted-foreground">Demo shortcuts (sample model):</span>
+              <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                <span className="w-full text-muted-foreground sm:w-auto">Demo shortcuts (sample model):</span>
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-11 rounded-full px-4 sm:h-9"
                   onClick={() => {
                     setPendingTap({
                       point: REFERENCE_SPOTS.carpetStain.position,
@@ -721,6 +769,7 @@ export default function LeaseClaimsPage({
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-11 rounded-full px-4 sm:h-9"
                   onClick={() => {
                     setPendingTap({
                       point: REFERENCE_SPOTS.deskScratch.position,
@@ -739,10 +788,12 @@ export default function LeaseClaimsPage({
           <div className="space-y-4">
             {/* Landlord staged claim composer */}
             {canFileMore && (
-              <Card className="border-claim/30">
+              <Card className="rounded-[24px] border-claim/25 shadow-[0_1px_2px_rgba(14,17,22,0.04),0_16px_40px_-16px_rgba(185,28,28,0.25)] max-lg:rounded-[28px]">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-1.5">
-                    <DollarSign className="h-4 w-4 text-claim" />
+                  <CardTitle className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-claim/10">
+                      <DollarSign className="h-4 w-4 text-claim" />
+                    </span>
                     File priced-pin claims
                   </CardTitle>
                   <CardDescription>
@@ -751,16 +802,16 @@ export default function LeaseClaimsPage({
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {pendingTap && (
-                    <div className="rounded-xl border border-claim/25 bg-claim/5 p-3 space-y-2.5">
+                    <div className="rounded-[20px] bg-claim/5 p-3 space-y-2.5">
                       <input
                         type="text"
                         value={claimTitle}
                         onChange={(e) => setClaimTitle(e.target.value)}
                         placeholder="Describe damage at this spot"
-                        className="w-full h-11 sm:h-9 rounded-md border border-border bg-surface px-2.5 text-base sm:text-sm"
+                        className="w-full h-12 rounded-2xl border-0 bg-surface px-4 text-[16px] ring-1 ring-border focus:outline-none focus:ring-2 focus:ring-accent"
                       />
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">$</span>
+                        <span className="text-[16px] font-semibold">$</span>
                         <input
                           type="number"
                           inputMode="numeric"
@@ -769,11 +820,11 @@ export default function LeaseClaimsPage({
                           value={claimDollars}
                           onChange={(e) => setClaimDollars(e.target.value)}
                           placeholder="40"
-                          className="w-28 h-11 sm:h-9 rounded-md border border-border bg-surface px-2.5 text-base sm:text-sm"
+                          className="w-24 h-12 rounded-2xl border-0 bg-surface px-4 text-[16px] tabular-nums ring-1 ring-border focus:outline-none focus:ring-2 focus:ring-accent"
                         />
                         <Button
                           onClick={handleStageClaim}
-                          className="flex-1 sm:h-9 sm:px-3.5 sm:text-xs"
+                          className="h-12 flex-1 rounded-2xl text-[15px]"
                         >
                           <Plus className="h-3.5 w-3.5" />
                           Stage pin
@@ -785,7 +836,7 @@ export default function LeaseClaimsPage({
                   {draftClaims.map((d) => (
                     <div
                       key={d.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs"
+                      className="flex items-center justify-between gap-2 rounded-[14px] bg-muted py-1 pl-4 pr-1 text-[14px]"
                     >
                       <span className="font-medium">
                         {d.title} ·{" "}
@@ -797,7 +848,7 @@ export default function LeaseClaimsPage({
                           setDraftClaims((prev) => prev.filter((x) => x.id !== d.id))
                         }
                         aria-label={`Remove staged claim: ${d.title}`}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:text-claim cursor-pointer"
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:text-claim cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -806,7 +857,7 @@ export default function LeaseClaimsPage({
 
                   <Button
                     variant="destructive"
-                    className="w-full h-auto min-h-11 whitespace-normal py-2.5 leading-snug"
+                    className="w-full h-auto min-h-12 rounded-2xl whitespace-normal py-3 text-[15px] leading-snug"
                     disabled={draftClaims.length === 0 || busy !== null}
                     onClick={handleFileClaimsAndClose}
                   >
@@ -818,21 +869,19 @@ export default function LeaseClaimsPage({
             )}
 
             {error && (
-              <div className="rounded-xl border border-claim/30 bg-claim/10 px-4 py-2.5 text-xs text-claim">
+              <div className="rounded-2xl bg-claim/10 px-4 py-3 text-[13px] text-claim">
                 {error}
               </div>
             )}
 
             {/* Live claims list (always read from KeyprintEscrow.getClaims) */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">
-                  Filed claims ({claimCards.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
+            <section className="space-y-3">
+              <h2 className="px-1 text-[17px] font-semibold tracking-[-0.01em]">
+                Filed claims ({claimCards.length})
+              </h2>
+              <div className="space-y-3">
                 {claimCards.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="card-soft p-5 text-[14px] text-muted-foreground">
                     No claims have been filed yet.
                   </p>
                 ) : (
@@ -847,10 +896,9 @@ export default function LeaseClaimsPage({
                       return (
                         <div
                           key={claim.claimId.toString()}
-                          className="rounded-xl border border-border bg-surface p-3.5 space-y-2.5"
+                          className="card-soft rounded-[20px] p-4 space-y-3"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <button
+                          <button
                               type="button"
                               onClick={() => {
                                 if (manifest) {
@@ -861,17 +909,17 @@ export default function LeaseClaimsPage({
                                   });
                                 }
                               }}
-                              className="text-left cursor-pointer"
+                              className="group flex w-full min-h-11 items-center gap-3 text-left cursor-pointer"
                             >
-                              <div className="text-sm font-semibold text-foreground hover:text-accent">
-                                {manifest?.title || `Claim #${claim.claimId.toString()}`}
-                              </div>
-                              <div className="text-base font-bold text-claim">
-                                {formatDollars(claim.amount)}
-                              </div>
-                            </button>
-
-                            <Badge
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-claim/10 text-claim">
+                                <MapPin className="h-[18px] w-[18px]" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[15px] font-semibold text-foreground group-hover:text-accent">
+                                  {manifest?.title || `Claim #${claim.claimId.toString()}`}
+                                </span>
+                                <Badge
+                                  className="mt-1"
                               variant={
                                 claim.state === 1
                                   ? "sealed"
@@ -881,14 +929,18 @@ export default function LeaseClaimsPage({
                                       ? "suggestion"
                                       : "claim"
                               }
-                            >
-                              {stateText}
-                            </Badge>
-                          </div>
+                                >
+                                  {stateText}
+                                </Badge>
+                              </span>
+                              <span className="money shrink-0 text-[20px] text-claim">
+                                {formatDollars(claim.amount)}
+                              </span>
+                            </button>
 
                           {/* Flag off-app claims without keyprint.claim.v1 priced-pin evidence */}
                           {!isPricedPin && (
-                            <div className="rounded-lg border border-claim/30 bg-claim/10 px-3 py-2 text-xs text-claim flex items-start gap-2">
+                            <div className="rounded-[14px] bg-claim/10 px-3 py-2.5 text-[13px] leading-snug text-claim flex items-start gap-2">
                               <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
                               <span>
                                 <strong>Not a priced pin:</strong> filed without matching 3D pin evidence.
@@ -901,7 +953,7 @@ export default function LeaseClaimsPage({
 
                           {/* Hero demo beat: claim lands on a co-signed move-in pin */}
                           {matchedMoveInPin && (
-                            <div className="rounded-lg border border-sealed/30 bg-sealed/10 px-3 py-2.5 text-xs text-sealed space-y-1.5">
+                            <div className="rounded-[14px] bg-sealed/10 px-3 py-3 text-[13px] leading-snug text-sealed space-y-1.5">
                               <div className="font-semibold flex items-center gap-1.5">
                                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                                 <span>
@@ -915,7 +967,7 @@ export default function LeaseClaimsPage({
                                 Move-in note: &ldquo;{matchedMoveInPin.text}&rdquo;
                               </div>
                               {matchedMoveInPin.sealedAt > 0 && (
-                                <div className="text-[11px] text-muted-foreground">
+                                <div className="text-[12px] text-muted-foreground">
                                   Sealed{" "}
                                   {new Date(matchedMoveInPin.sealedAt * 1000).toLocaleDateString(
                                     "en-US",
@@ -937,7 +989,7 @@ export default function LeaseClaimsPage({
                                 <img
                                   src={pinPhotoUrls[matchedMoveInPin.id.toLowerCase()]}
                                   alt={`Move-in evidence: ${matchedMoveInPin.text}`}
-                                  className="w-full max-h-36 object-cover rounded-md border border-sealed/25 mt-1"
+                                  className="w-full max-h-36 object-cover rounded-[10px] mt-1"
                                 />
                               )}
                             </div>
@@ -950,7 +1002,7 @@ export default function LeaseClaimsPage({
                               <div className="space-y-2">
                                 <div className="grid grid-cols-2 gap-2 pt-1 sm:flex sm:flex-wrap">
                                   <Button
-                                    className="h-auto min-h-11 whitespace-normal px-3 py-2 leading-snug sm:min-h-9 sm:py-1.5 sm:text-xs"
+                                    className="h-auto min-h-12 rounded-2xl whitespace-normal px-3 py-2 text-[15px] leading-snug sm:min-h-10 sm:text-[14px]"
                                     disabled={busy !== null}
                                     onClick={() =>
                                       handleAccept(claim.claimId, batchSettle)
@@ -960,7 +1012,7 @@ export default function LeaseClaimsPage({
                                   </Button>
                                   <Button
                                     variant="destructive"
-                                    className="h-auto min-h-11 whitespace-normal px-3 py-2 leading-snug sm:min-h-9 sm:py-1.5 sm:text-xs"
+                                    className="h-auto min-h-12 rounded-2xl whitespace-normal px-3 py-2 text-[15px] leading-snug sm:min-h-10 sm:text-[14px]"
                                     disabled={busy !== null}
                                     onClick={() => handleDispute(claim.claimId)}
                                   >
@@ -969,11 +1021,11 @@ export default function LeaseClaimsPage({
                                 </div>
                                 {live.lease &&
                                   (live.chainNowSec > claim.filedAt + live.lease.responseWindow ? (
-                                    <p className="text-sm text-muted-foreground sm:text-xs">
+                                    <p className="text-[13px] text-muted-foreground">
                                       The time to answer has passed, so this claim now counts as accepted.
                                     </p>
                                   ) : (
-                                    <p className="text-sm text-muted-foreground sm:text-xs">
+                                    <p className="text-[13px] text-muted-foreground">
                                       Answer by{" "}
                                       {new Date(
                                         (claim.filedAt + live.lease.responseWindow) * 1000,
@@ -997,7 +1049,7 @@ export default function LeaseClaimsPage({
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="max-sm:h-11 max-sm:w-full"
+                                  className="rounded-xl max-sm:h-11 max-sm:w-full"
                                   disabled={busy !== null}
                                   onClick={() => handleWithdraw(claim.claimId)}
                                 >
@@ -1014,7 +1066,7 @@ export default function LeaseClaimsPage({
                 {allClaimsFinalAndClosed && session && (
                   <Button
                     size="lg"
-                    className="w-full mt-2"
+                    className="w-full mt-2 h-12 rounded-2xl text-[15px]"
                     disabled={busy !== null}
                     onClick={handleSettleNow}
                   >
@@ -1022,8 +1074,8 @@ export default function LeaseClaimsPage({
                     {busy ?? "Settle deposit now"}
                   </Button>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </section>
           </div>
         </div>
       </div>

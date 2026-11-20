@@ -5,6 +5,7 @@ import Link from "next/link";
 import { encodeFunctionData, formatUnits } from "viem";
 import { MotionConfig, motion } from "framer-motion";
 import {
+  Check,
   CheckCircle2,
   Download,
   ExternalLink,
@@ -199,13 +200,17 @@ export default function LeaseSettlePage({
   ].filter((r): r is { label: string; txHash: string } => Boolean(r.txHash));
 
   const totalGasWei = parseWei(live.meta?.total_gas_cost_wei);
+  // Display only: each side's share of the payout, for the split bar (bigint math, tenths of a percent).
+  const payoutTotal = (live.lease?.renterPayout ?? 0n) + (live.lease?.landlordPayout ?? 0n);
+  const renterSharePct =
+    payoutTotal > 0n ? Number(((live.lease?.renterPayout ?? 0n) * 1000n) / payoutTotal) / 10 : 100;
   const isSettled = live.lease?.state === 3;
   const leaseState = live.lease?.state ?? 0;
 
   return (
     <LeaseShell leaseId={leaseId} live={live}>
       <div className="max-w-3xl mx-auto space-y-6">
-        <Card className={isSettled ? "border-sealed/30" : ""}>
+        <Card className={isSettled ? "border-transparent" : ""}>
           <CardHeader>
             <div className="flex items-center justify-between gap-2">
               <Badge variant={isSettled ? "sealed" : "default"}>
@@ -213,27 +218,25 @@ export default function LeaseSettlePage({
                 {isSettled ? "Settled" : "Awaiting settlement"}
               </Badge>
               {live.lease && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-[13px] tabular-nums text-muted-foreground">
                   Deposit: {formatDollars(live.lease.deposit)}
                 </span>
               )}
             </div>
-            <CardTitle className="text-2xl pt-1">
+            <CardTitle className="pt-2 font-display text-[30px] font-semibold leading-[1.1] tracking-[-0.03em] text-balance sm:text-[36px]">
               {isSettled
                 ? "The deposit is settled."
                 : leaseState === 2
                   ? "Settlement runs as soon as every claim is final."
                   : "Settlement happens after move-out."}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-[15px] leading-[1.55]">
               {isSettled
-                ? `Paid out in USDC on Arc according to the lease rules, with no admin key.${
-                    live.meta?.settled_by === "keeper"
-                      ? " Released automatically by Keyprint once the deadline passed."
-                      : live.meta?.settled_by === "party"
-                        ? " Released with one tap by the renter or landlord."
-                        : ""
-                  }`
+                ? live.meta?.settled_by === "keeper"
+                  ? "Released automatically by Keyprint once the deadline passed."
+                  : live.meta?.settled_by === "party"
+                    ? "Released with one tap by the renter or landlord."
+                    : "Paid out according to the lease rules."
                 : leaseState === 2
                   ? "Accept, dispute, or wait out the deadlines on the Claims tab."
                   : "Once the move-out scan is sealed, the landlord gets a claim window. No claims means the full deposit goes back."}
@@ -247,7 +250,7 @@ export default function LeaseSettlePage({
                       ? `/lease/${leaseId}/compare`
                       : `/lease/${leaseId}/capture`
                 }
-                className={cn(buttonVariants(), "mt-3 w-full sm:w-auto sm:self-start")}
+                className={cn(buttonVariants(), "mt-3 h-12 w-full rounded-2xl text-[15px] sm:w-auto sm:self-start")}
               >
                 {leaseState === 2
                   ? "Go to claims"
@@ -260,25 +263,49 @@ export default function LeaseSettlePage({
 
           {isSettled && live.lease && (
             <CardContent className="space-y-6">
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div className="rounded-2xl border border-sealed/30 bg-sealed/5 p-5 sm:p-6">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-sealed">
-                    Returned to renter
-                  </div>
-                  <div className="text-4xl font-semibold tabular-nums tracking-tight mt-2 text-foreground">
+              <MotionConfig reducedMotion="user">
+                <section className="vault p-6 sm:p-8">
+                  <div className="eyebrow text-white/60">Returned to renter</div>
+                  <div className="money mt-3 font-display text-[56px] text-white sm:text-[64px]">
                     {renterDisplay}
                   </div>
-                </div>
 
-                <div className="rounded-2xl border border-border bg-muted/40 p-5 sm:p-6">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Paid to landlord (accepted or awarded claims)
+                  <div
+                    aria-hidden="true"
+                    className="mt-5 flex h-2.5 overflow-hidden rounded-full bg-white/10"
+                  >
+                    <motion.div
+                      className="h-full bg-sealed-bright"
+                      initial={{ width: "0%" }}
+                      animate={{ width: `${renterSharePct}%` }}
+                      transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                    />
+                    <motion.div
+                      className="h-full bg-[#f87171]"
+                      initial={{ width: "0%" }}
+                      animate={{ width: `${100 - renterSharePct}%` }}
+                      transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                    />
                   </div>
-                  <div className="text-4xl font-semibold tabular-nums tracking-tight mt-2 text-foreground">
-                    {landlordDisplay}
-                  </div>
-                </div>
-              </div>
+
+                  <dl className="mt-5 divide-y divide-white/10 border-t border-white/10">
+                    <div className="flex items-center justify-between gap-4 py-3">
+                      <dt className="flex items-center gap-2 text-[13px] text-white/60">
+                        <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-sealed-bright" />
+                        Back to renter
+                      </dt>
+                      <dd className="money text-[20px] text-white">{renterDisplay}</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 pt-3">
+                      <dt className="flex items-start gap-2 text-[13px] text-white/60">
+                        <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#f87171]" />
+                        <span>Paid to landlord (accepted or awarded claims)</span>
+                      </dt>
+                      <dd className="money shrink-0 text-[20px] text-white">{landlordDisplay}</dd>
+                    </div>
+                  </dl>
+                </section>
+              </MotionConfig>
 
               {/* Plain-language outcome, landing as the count-up finishes. */}
               <MotionConfig reducedMotion="user">
@@ -286,10 +313,10 @@ export default function LeaseSettlePage({
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.9, duration: 0.35 }}
-                  className="flex items-start gap-3 rounded-2xl border border-sealed/25 bg-sealed/5 p-4"
+                  className="flex items-start gap-3 rounded-2xl border-0 bg-sealed/10 p-4"
                 >
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-sealed" />
-                  <p className="text-sm font-medium text-foreground">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-sealed" />
+                  <p className="text-[15px] font-medium leading-snug text-foreground">
                     {live.lease.landlordPayout === 0n
                       ? session?.address.toLowerCase() === live.lease.renter.toLowerCase()
                         ? `Nothing was deducted: all ${formatDollars(live.lease.renterPayout)} came back to you.`
@@ -300,18 +327,18 @@ export default function LeaseSettlePage({
               </MotionConfig>
 
               {owedAmount > 0n && (
-                <div className="rounded-xl border border-suggestion/30 bg-suggestion/10 p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-sm">
+                <div className="rounded-2xl bg-suggestion/10 p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-[14px]">
                     <span className="font-semibold">
                       {formatDollars(owedAmount)} ready to claim:
                     </span>{" "}
                     a direct transfer could not complete, so your payout was held safely for manual withdrawal.
                   </div>
-                  <Button onClick={handleWithdrawOwed} disabled={withdrawing}>
+                  <Button onClick={handleWithdrawOwed} disabled={withdrawing} className="h-12 rounded-2xl max-sm:w-full">
                     {withdrawing ? "Withdrawing…" : "Withdraw payout"}
                   </Button>
                   {withdrawError && (
-                    <p className="w-full text-xs text-claim" role="alert">
+                    <p className="w-full text-[13px] text-claim" role="alert">
                       {withdrawError}
                     </p>
                   )}
@@ -319,7 +346,11 @@ export default function LeaseSettlePage({
               )}
 
               <div className="flex flex-wrap gap-3">
-                <Button variant="secondary" onClick={handleDownloadEvidence}>
+                <Button
+                  variant="secondary"
+                  onClick={handleDownloadEvidence}
+                  className="h-12 w-full rounded-2xl text-[15px] sm:w-auto"
+                >
                   <Download className="h-4 w-4" />
                   Download my evidence
                 </Button>
@@ -331,59 +362,64 @@ export default function LeaseSettlePage({
         {/* Settlement Receipt (explorer links + measured USDC network fees belong here per spec) */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <Receipt className="h-4 w-4 text-accent" />
-              Receipt &amp; Network Proof
+              Receipt and proof
             </CardTitle>
             <CardDescription>
               Measured Arc Testnet network fees (sponsored for the renter and landlord).
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4 text-sm">
-            <div className="grid sm:grid-cols-2 gap-3 text-xs">
-              <div className="rounded-xl border border-border bg-muted/40 p-3">
+          <CardContent className="space-y-5 text-sm">
+            <div className="grid grid-cols-2 gap-3 text-[13px]">
+              <div className="rounded-2xl bg-muted p-4">
                 <div className="text-muted-foreground">Operations recorded</div>
-                <div className="text-base font-semibold mt-0.5">
+                <div className="money mt-2 text-[20px]">
                   {live.meta?.tx_count || receipts.length}
                 </div>
               </div>
-              <div className="rounded-xl border border-border bg-muted/40 p-3">
-                <div className="text-muted-foreground">
-                  Total Arc network fees (USDC, sponsored)
-                </div>
-                <div className="text-base font-semibold mt-0.5">
+              <div className="rounded-2xl bg-muted p-4">
+                <div className="text-muted-foreground">Network fees (paid by Keyprint)</div>
+                <div className="money mt-2 text-[20px]">
                   {formatNativeUsdcFee(totalGasWei)}
                 </div>
               </div>
             </div>
 
             {receipts.length > 0 && (
-              <div className="rounded-xl border border-border divide-y divide-border text-xs">
+              <ul className="relative space-y-4 pl-9">
+                <span
+                  aria-hidden="true"
+                  className="absolute left-[11px] top-3 bottom-3 w-0.5 rounded-full bg-border"
+                />
                 {receipts.map((r) => (
-                  <div
-                    key={r.txHash}
-                    className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                  >
-                    <span className="font-medium text-foreground">{r.label}</span>
+                  <li key={r.txHash} className="relative">
+                    <span
+                      aria-hidden="true"
+                      className="absolute -left-9 top-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-sealed text-white ring-4 ring-surface"
+                    >
+                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                    </span>
+                    <div className="text-[15px] font-medium leading-snug text-foreground">{r.label}</div>
                     <a
                       href={explorerTxUrl(r.txHash)}
                       target="_blank"
                       rel="noreferrer"
                       aria-label={`${r.label}: view on the Arc explorer`}
-                      className="inline-flex min-h-11 items-center gap-1 font-medium text-accent hover:underline sm:min-h-0"
+                      className="-my-2 inline-flex min-h-11 items-center gap-1 text-[13px] font-medium text-accent hover:underline"
                     >
                       View on Arc
                       <ExternalLink className="h-3 w-3" />
                     </a>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
 
-            <div className="flex items-start gap-2 text-xs text-muted-foreground pt-1">
+            <div className="flex items-start gap-2 border-t border-border pt-4 text-[13px] leading-relaxed text-muted-foreground">
               <ShieldCheck className="h-4 w-4 text-sealed shrink-0 mt-0.5" />
               <span>
-                Every seal&apos;s fingerprint and every payout is on Arc, in contracts with no admin key. Anyone can check the downloaded evidence bundle against Arc on the Verify page.
+                Paid out in USDC on Arc according to the lease rules, with no admin key. Every seal&apos;s fingerprint and every payout is recorded there, and anyone can check the downloaded evidence bundle against Arc on the Verify page.
               </span>
             </div>
           </CardContent>

@@ -343,6 +343,24 @@ export async function loginPasskeyAccount(
  * a bundle transaction can succeed while the user's calls inside it fail, and treating
  * that as success would silently skip a dispute or a seal at a deadline.
  */
+/** Circle's Arc bundler rejects any operation whose priority fee is under 1 gwei. */
+const MIN_PRIORITY_FEE_WEI = 1_000_000_000n;
+
+/**
+ * Fees for a passkey operation on Arc. Arc's RPC suggests a 0 priority fee, which Circle's
+ * bundler refuses ("precheck failed: maxPriorityFeePerGas is 0 but must be at least 1000000000"),
+ * and a fee cap of 1.2x the base fee leaves the operation unbundled. So: at least a 1 gwei tip and
+ * twice the suggested cap. Gas Station sponsors it, and only the actual price is charged.
+ */
+async function arcUserOpFees(client: {
+  estimateFeesPerGas: () => Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }>;
+}): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }> {
+  const fees = await client.estimateFeesPerGas();
+  const maxPriorityFeePerGas =
+    fees.maxPriorityFeePerGas > MIN_PRIORITY_FEE_WEI ? fees.maxPriorityFeePerGas : MIN_PRIORITY_FEE_WEI;
+  return { maxFeePerGas: fees.maxFeePerGas * 2n + maxPriorityFeePerGas, maxPriorityFeePerGas };
+}
+
 export async function sendSponsoredCalls(
   session: SavedPasskeySession,
   calls: SponsoredCall[],
@@ -370,6 +388,7 @@ export async function sendSponsoredCalls(
     transport,
     // arcTestnet has no blockTime in viem, so receipts would otherwise be polled every 4 s.
     pollingInterval: 500,
+    userOperation: { estimateFeesPerGas: () => arcUserOpFees(client) },
   });
 
   const userOpHash = await bundler.sendUserOperation({

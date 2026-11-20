@@ -58,6 +58,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setInstallPrompt(null);
   };
 
+  // The landing is a full-bleed product site: no sidebar, header or tabs (the SW above still registers).
+  if (pathname === "/") return <>{children}</>;
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col lg:flex-row">
       {/* Desktop Native-Style Left Application Sidebar */}
@@ -70,20 +73,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             href="/"
             className="-mx-1.5 flex items-center gap-2.5 rounded-xl px-1.5 py-1 font-semibold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-foreground shadow-xs">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-ink text-sealed-bright shadow-[0_1px_2px_rgba(11,19,36,0.2)]">
               <ShieldCheck className="h-4 w-4" />
             </span>
             <div>
-              <div className="text-[15px] font-semibold leading-none">Keyprint</div>
-              <div className="text-xs text-muted-foreground font-normal mt-0.5">
-                3D Deposit Protection
+              <div className="font-display text-[20px] font-semibold leading-none tracking-[-0.02em]">
+                Keyprint
+              </div>
+              <div className="text-xs text-muted-foreground font-normal mt-1">
+                3D deposit protection
               </div>
             </div>
           </Link>
         </div>
 
         <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 py-4">
-          <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="px-3 pb-2 text-xs font-medium text-muted-foreground">
             Workspace
           </div>
           <div className="space-y-0.5">
@@ -100,7 +105,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className={cn(
                     "group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
                     active
-                      ? "bg-accent/10 text-accent"
+                      ? "bg-ink text-white shadow-[0_1px_2px_rgba(11,19,36,0.2)]"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-border/60",
                   )}
                 >
@@ -121,7 +126,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               className={cn(
                 "group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
                 pathname === "/"
-                  ? "bg-accent/10 text-accent"
+                  ? "bg-ink text-white"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-border/60",
               )}
             >
@@ -162,7 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="text-xs font-semibold truncate">
                     {session.username}
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">
                     Passkey active · Details
                   </div>
                 </div>
@@ -173,7 +178,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex gap-1.5">
               <Link
                 href="/start"
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-foreground text-background hover:bg-foreground/90 h-11 px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-ink text-white hover:bg-ink-2 h-11 px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
               >
                 <Fingerprint className="h-4 w-4" />
                 Sign in with passkey
@@ -200,10 +205,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             href="/"
             className="flex h-11 shrink-0 items-center gap-2 rounded-xl px-2 font-semibold tracking-tight text-foreground [-webkit-tap-highlight-color:transparent] active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] bg-accent text-accent-foreground shadow-xs">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] bg-ink text-sealed-bright shadow-[0_1px_2px_rgba(11,19,36,0.2)]">
               <ShieldCheck className="h-4 w-4" />
             </span>
-            <span className="text-[15px] font-semibold">Keyprint</span>
+            <span className="font-display text-[20px] font-semibold leading-none tracking-[-0.02em]">
+              Keyprint
+            </span>
           </Link>
 
           <div className="flex min-w-0 items-center">
@@ -244,9 +251,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Mobile Native-Style Fixed Bottom Tab Bar */}
       <nav
         aria-label="Primary"
-        className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-border/70 bg-surface/85 backdrop-blur-xl backdrop-saturate-150 pb-[max(0.25rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+        className="lg:hidden fixed left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-30 mx-auto max-w-lg rounded-[24px] bg-surface/85 backdrop-blur-xl backdrop-saturate-150 ring-1 ring-black/5 shadow-[0_12px_32px_-12px_rgba(11,19,36,0.25)]"
       >
-        <div className="mx-auto grid max-w-lg grid-cols-5 px-1">
+        <div className="grid grid-cols-5 p-1">
           {PRIMARY_NAV.map((item) => {
             const Icon = item.icon;
             const active =
@@ -258,14 +265,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "group flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl pt-1.5 pb-1 text-[11px] font-medium leading-none select-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60",
-                  active ? "text-accent" : "text-muted-foreground active:text-foreground",
+                  "group flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl pt-1.5 pb-1 text-[12px] font-medium leading-none select-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60",
+                  active
+                    ? "text-foreground font-semibold"
+                    : "text-muted-foreground active:text-foreground",
                 )}
               >
                 <span
                   className={cn(
                     "relative flex h-7 w-12 items-center justify-center rounded-full transition-colors",
-                    active ? "bg-accent/10" : "group-active:bg-muted",
+                    active ? "bg-ink text-white" : "group-active:bg-muted",
                   )}
                 >
                   <Icon className="h-5 w-5" strokeWidth={active ? 2.25 : 1.75} />
@@ -278,16 +287,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             href="/start"
             aria-current={pathname === "/start" ? "page" : undefined}
             className={cn(
-              "group flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl pt-1.5 pb-1 text-[11px] font-medium leading-none select-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60",
+              "group flex min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-xl pt-1.5 pb-1 text-[12px] font-medium leading-none select-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60",
               pathname === "/start"
-                ? "text-accent"
+                ? "text-foreground font-semibold"
                 : "text-muted-foreground active:text-foreground",
             )}
           >
             <span
               className={cn(
                 "relative flex h-7 w-12 items-center justify-center rounded-full transition-colors",
-                pathname === "/start" ? "bg-accent/10" : "group-active:bg-muted",
+                pathname === "/start" ? "bg-ink text-white" : "group-active:bg-muted",
               )}
             >
               <Fingerprint

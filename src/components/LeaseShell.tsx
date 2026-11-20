@@ -54,6 +54,18 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
     { href: `${base}/claims`, label: "5. Claims", short: "Claims" },
     { href: `${base}/settle`, label: "6. Settle", short: "Settle" },
   ];
+  const activeIndex = tabs.findIndex((t) => t.href === pathname);
+
+  // Keep the current step's chip in view when the step row scrolls sideways on phones.
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav || nav.scrollWidth <= nav.clientWidth) return;
+    const chip = nav.querySelector<HTMLElement>('[data-active="true"]');
+    if (!chip) return;
+    const target = chip.offsetLeft - (nav.clientWidth - chip.offsetWidth) / 2;
+    nav.scrollTo({ left: Math.max(0, target), behavior: "instant" });
+  }, [pathname]);
 
   const receipts: ReceiptLink[] = [];
   if (live.meta?.created_tx_hash) {
@@ -99,16 +111,14 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <AppNav receipts={receipts} />
-
-      <div className="border-b border-border bg-surface">
-        <div className="mx-auto max-w-6xl px-5 py-3 sm:py-4 flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight break-words">
+      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 border-b border-border/60 bg-background lg:top-0">
+        <div className="mx-auto flex max-w-6xl flex-col gap-1.5 px-4 pt-1.5 pb-2 sm:gap-3 sm:px-5 sm:py-4">
+          <div className="flex min-h-9 items-center justify-between gap-2.5 sm:gap-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="line-clamp-2 break-words font-display text-[16px] font-semibold leading-[1.15] tracking-[-0.02em] text-pretty sm:line-clamp-1 sm:text-xl sm:leading-tight">
                 {live.meta?.unit_name || "Apartment Lease"}
               </h1>
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <p className="hidden items-center gap-1.5 text-[12px] text-muted-foreground sm:flex">
                 <span
                   aria-hidden="true"
                   className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent motion-safe:animate-pulse"
@@ -118,25 +128,42 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {depositBadge && (
                 <Badge
-                  variant={live.lease?.state === 0 ? "default" : "sealed"}
-                  className="whitespace-nowrap"
+                  variant="default"
+                  title={depositBadge}
+                  className={cn(
+                    "h-7 whitespace-nowrap rounded-full px-2.5 text-[13px] font-semibold tabular-nums sm:px-3 sm:text-[12px]",
+                    live.lease?.state === 0
+                      ? "border-transparent bg-muted text-foreground"
+                      : "border-transparent bg-ink text-white",
+                  )}
                 >
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  {depositBadge}
+                  {live.lease?.state === 0 ? (
+                    <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                  ) : (
+                    <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-sealed-bright" />
+                  )}
+                  {/* Phones show just the amount; the full sentence is in the title and on larger screens. */}
+                  <span className="sm:hidden">{live.lease ? formatDollars(live.lease.deposit) : null}</span>
+                  <span className="sr-only sm:not-sr-only">{depositBadge}</span>
                 </Badge>
               )}
-              <Badge variant="default" className="whitespace-nowrap">
+              <Badge
+                variant="default"
+                className="hidden h-7 whitespace-nowrap rounded-full border-transparent bg-muted px-3 text-[12px] sm:inline-flex"
+              >
                 {stateName}
               </Badge>
+              <AppNav receipts={receipts} variant="inline" />
             </div>
           </div>
 
           <nav
+            ref={navRef}
             aria-label="Lease steps"
-            className="grid grid-cols-6 gap-1 sm:flex sm:items-center sm:gap-1 sm:overflow-x-auto sm:pb-0.5"
+            className="no-scrollbar relative -mx-4 -my-1 flex snap-x gap-1.5 overflow-x-auto scroll-px-4 px-4 sm:mx-0 sm:my-0 sm:scroll-px-0 sm:px-0"
           >
             {tabs.map((tab, i) => {
               const active = pathname === tab.href;
@@ -146,28 +173,40 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
                   href={tab.href}
                   aria-current={active ? "page" : undefined}
                   aria-label={tab.label}
-                  className={cn(
-                    "flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1 text-[11px] font-medium leading-tight transition-colors sm:min-h-0 sm:flex-row sm:whitespace-nowrap sm:px-3 sm:py-1.5 sm:text-xs",
-                    active
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
+                  data-active={active ? "true" : undefined}
+                  className="group inline-flex h-11 shrink-0 snap-start items-center rounded-full [-webkit-tap-highlight-color:transparent] focus-visible:outline-none sm:h-9"
                 >
                   <span
-                    aria-hidden="true"
                     className={cn(
-                      "flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums sm:hidden",
-                      active ? "bg-accent-foreground/20" : "bg-muted text-foreground",
+                      "inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[14px] font-medium whitespace-nowrap transition-colors duration-200 group-focus-visible:ring-2 group-focus-visible:ring-accent/60 sm:h-8 sm:px-3 sm:text-[13px]",
+                      active
+                        ? "bg-ink text-white"
+                        : "bg-muted text-muted-foreground group-hover:text-foreground",
                     )}
                   >
-                    {i + 1}
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "flex h-5 w-5 items-center justify-center rounded-full text-[12px] font-semibold tabular-nums sm:hidden",
+                        active ? "bg-white/15" : "bg-surface text-foreground",
+                      )}
+                    >
+                      {i + 1}
+                    </span>
+                    <span className="sm:hidden">{tab.short}</span>
+                    <span className="hidden sm:inline">{tab.label}</span>
                   </span>
-                  <span className="sm:hidden">{tab.short}</span>
-                  <span className="hidden sm:inline">{tab.label}</span>
                 </Link>
               );
             })}
           </nav>
+        </div>
+        {/* Phone progress track doubles as the header's bottom edge. */}
+        <div aria-hidden="true" className="absolute inset-x-0 -bottom-px h-0.5 bg-border sm:hidden">
+          <div
+            className="h-full bg-ink transition-[width] duration-300 ease-out-expo motion-reduce:transition-none"
+            style={{ width: `${(Math.max(0, activeIndex + 1) / tabs.length) * 100}%` }}
+          />
         </div>
       </div>
 
@@ -175,14 +214,14 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
         {notice && (
           <div
             role="status"
-            className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm"
+            className="flex items-start gap-2 rounded-2xl bg-muted px-4 py-3 text-[14px]"
           >
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-claim" />
             <span>{notice}</span>
           </div>
         )}
         {live.unverifiedRecordCount > 0 && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             {live.unverifiedRecordCount} saved item{live.unverifiedRecordCount === 1 ? "" : "s"} didn&apos;t match
             {" "}what&apos;s sealed (or {live.unverifiedRecordCount === 1 ? "is" : "are"} still confirming), so{" "}
             {live.unverifiedRecordCount === 1 ? "it's" : "they're"} hidden.

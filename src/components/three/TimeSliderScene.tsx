@@ -7,6 +7,7 @@ import { CameraControls, useGLTF, useProgress } from "@react-three/drei";
 import type CameraControlsImpl from "camera-controls";
 import { GripVertical, RotateCcw } from "lucide-react";
 import { PinMarker, type SpatialPinItem } from "./PinMarker";
+import { STAGE_COLOR, makeScanUnlit } from "./RoomViewer";
 
 interface ScissorContentProps {
   moveInUrl: string;
@@ -36,8 +37,8 @@ function ScissorComparisonContent({
   const gltfIn = useGLTF(moveInUrl);
   const gltfOut = useGLTF(moveOutUrl);
 
-  const moveInClone = useMemo(() => gltfIn.scene.clone(true), [gltfIn.scene]);
-  const moveOutClone = useMemo(() => gltfOut.scene.clone(true), [gltfOut.scene]);
+  const moveInClone = useMemo(() => makeScanUnlit(gltfIn.scene.clone(true)), [gltfIn.scene]);
+  const moveOutClone = useMemo(() => makeScanUnlit(gltfOut.scene.clone(true)), [gltfOut.scene]);
 
   const moveInGroupRef = useRef<THREE.Group>(null);
   const moveOutGroupRef = useRef<THREE.Group>(null);
@@ -159,14 +160,14 @@ function SliderLoadOverlay() {
   const { active, progress } = useProgress();
   if (!active) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-muted/85 backdrop-blur-xs">
-      <div className="w-48 h-2 rounded-full bg-border overflow-hidden">
+    <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-stage/90">
+      <div className="h-1 w-48 overflow-hidden rounded-full bg-white/10">
         <div
-          className="h-full bg-accent transition-all duration-150"
+          className="h-full rounded-full bg-accent-bright transition-[width] duration-150"
           style={{ width: `${Math.round(progress)}%` }}
         />
       </div>
-      <span className="mt-2 text-xs font-medium text-muted-foreground">
+      <span className="mt-3 text-[13px] font-medium tabular-nums text-white/70">
         Preparing comparison… {Math.round(progress)}%
       </span>
     </div>
@@ -217,7 +218,7 @@ export function TimeSliderScene({
   return (
     <div
       ref={containerRef}
-      className={`relative w-full overflow-hidden rounded-2xl border border-border bg-[#ebe6de] select-none ${heightClassName}`}
+      className={`relative isolate w-full overflow-hidden rounded-[20px] bg-stage ring-1 ring-white/10 shadow-[0_30px_80px_-20px_rgba(10,26,51,0.45)] select-none ${heightClassName}`}
       onPointerMove={(e) => {
         if (draggingRef.current) updateSplitFromClientX(e.clientX);
       }}
@@ -231,11 +232,12 @@ export function TimeSliderScene({
       <SliderLoadOverlay />
 
       <Canvas
+        flat
         dpr={[1, 1.5]}
         camera={{ fov: 48, near: 0.05, far: 100 }}
         gl={{ antialias: true, autoClear: false, preserveDrawingBuffer: true }}
       >
-        <color attach="background" args={["#ebe6de"]} />
+        <color attach="background" args={[STAGE_COLOR]} />
         <Suspense fallback={null}>
           <ScissorComparisonContent
             moveInUrl={moveInUrl}
@@ -250,12 +252,18 @@ export function TimeSliderScene({
         </Suspense>
       </Canvas>
 
+      {/* Soft vignette so the scan sits on the stage; below every control. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_40%,transparent_55%,rgba(0,0,0,0.5))]"
+      />
+
       {/* Top left / right labels + Reset camera */}
-      <div className="pointer-events-none absolute top-3 left-3 z-10 rounded-full bg-surface/90 backdrop-blur-xs border border-border px-3 py-1 text-xs font-semibold text-foreground shadow-xs">
+      <div className="pointer-events-none absolute top-3 left-3 z-10 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-[12px] font-medium text-white">
         {moveInLabel}
       </div>
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
-        <div className="pointer-events-none rounded-full bg-surface/90 backdrop-blur-xs border border-border px-3 py-1 text-xs font-semibold text-foreground shadow-xs">
+      <div className="absolute top-1.5 right-1.5 z-10 flex items-center">
+        <div className="pointer-events-none rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-[12px] font-medium text-white">
           {moveOutLabel}
         </div>
         <button
@@ -267,15 +275,17 @@ export function TimeSliderScene({
           }}
           title="Reset camera & slider"
           aria-label="Reset camera and slider"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-surface/90 hover:bg-surface backdrop-blur-xs border border-border text-foreground shadow-xs cursor-pointer"
+          className="group inline-flex h-11 w-11 cursor-pointer items-center justify-center focus-visible:outline-none"
         >
-          <RotateCcw className="h-3.5 w-3.5" />
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white transition-colors duration-200 group-hover:bg-black/70 group-focus-visible:ring-2 group-focus-visible:ring-accent-bright">
+            <RotateCcw className="h-3.5 w-3.5" />
+          </span>
         </button>
       </div>
 
       {/* Vertical wipe bar + draggable handle */}
       <div
-        className="absolute top-0 bottom-0 z-10 w-0.5 bg-white shadow-[0_0_8px_rgba(0,0,0,0.45)] pointer-events-none"
+        className="absolute top-0 bottom-0 z-10 w-0.5 -translate-x-1/2 bg-white/90 shadow-[0_0_12px_rgba(0,0,0,0.5)] pointer-events-none"
         style={{ left: `${split * 100}%` }}
       />
       <button
@@ -297,14 +307,14 @@ export function TimeSliderScene({
           e.currentTarget.releasePointerCapture(e.pointerId);
         }}
         style={{ left: `${split * 100}%` }}
-        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-surface border-2 border-foreground/80 shadow-lg cursor-ew-resize hover:scale-105 transition-transform"
+        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white text-ink ring-4 ring-white/20 shadow-[0_8px_24px_rgba(0,0,0,0.45)] cursor-ew-resize transition-transform duration-200 motion-safe:hover:scale-105 focus-visible:outline-none focus-visible:ring-accent-bright"
       >
-        <GripVertical className="h-4 w-4 text-foreground" />
+        <GripVertical className="h-4 w-4" />
       </button>
 
       {/* Bottom accessible range slider fallback */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 rounded-full bg-surface/90 backdrop-blur-xs border border-border px-3 py-1.5 flex items-center gap-2.5 shadow-sm">
-        <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 md:bottom-4 md:left-4 md:translate-x-0 z-20 flex max-w-[calc(100%-1.5rem)] md:max-w-[calc(100%-2rem)] items-center gap-2.5 rounded-full border border-white/15 bg-black/55 px-3.5 py-2">
+        <span className="hidden whitespace-nowrap text-[12px] font-medium text-white/75 sm:inline">
           {moveInLabel}
         </span>
         <input
@@ -317,10 +327,10 @@ export function TimeSliderScene({
             splitRef.current = v;
             setSplit(v);
           }}
-          className="w-32 sm:w-44 accent-[#1d4ed8] cursor-pointer"
+          className="h-6 w-40 cursor-pointer accent-[#8fb0ff] sm:w-44"
           aria-label="Time comparison slider"
         />
-        <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+        <span className="hidden whitespace-nowrap text-[12px] font-medium text-white/75 sm:inline">
           {moveOutLabel}
         </span>
       </div>

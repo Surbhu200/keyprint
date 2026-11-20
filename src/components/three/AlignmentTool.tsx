@@ -2,9 +2,8 @@
 
 import { useCallback, useRef, useState } from "react";
 import type * as THREE from "three";
-import { AlertTriangle, CheckCircle2, RotateCcw, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RotateCcw, Crosshair } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   applyMatrix4ColumnMajor,
   solveUmeyama,
@@ -229,7 +228,7 @@ export function AlignmentTool({
                 runAlignment(presetLandmarks.moveIn, presetLandmarks.moveOut);
               }}
             >
-              <Sparkles className="h-3.5 w-3.5" />
+              <Crosshair className="h-3.5 w-3.5" />
               Tap 4 reference corners
             </Button>
           )}
@@ -249,9 +248,9 @@ export function AlignmentTool({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>Move-in scan (reference)</span>
-            <span>{moveInPts.length} / 4 taps</span>
+          <div className="flex items-baseline justify-between gap-3 text-[13px] leading-[18px] font-medium text-muted-foreground">
+            <span className="text-foreground">Move-in scan (reference)</span>
+            <span className="tabular-nums">{moveInPts.length} / 4 taps</span>
           </div>
           <RoomViewer
             url={moveInUrl}
@@ -264,9 +263,9 @@ export function AlignmentTool({
         </div>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>Move-out scan (to align)</span>
-            <span>{moveOutPts.length} / 4 taps</span>
+          <div className="flex items-baseline justify-between gap-3 text-[13px] leading-[18px] font-medium text-muted-foreground">
+            <span className="text-foreground">Move-out scan (to align)</span>
+            <span className="tabular-nums">{moveOutPts.length} / 4 taps</span>
           </div>
           <RoomViewer
             url={moveOutUrl}
@@ -303,35 +302,41 @@ export function AlignmentTool({
               )}
               <span>{result.agreement.summaryText}</span>
             </div>
-            <Badge variant={result.agreement.passedGate ? "sealed" : "claim"}>
+            <span
+              className={`inline-flex min-h-7 items-center rounded-full px-3 py-1 text-[13px] leading-[18px] font-semibold ${
+                result.agreement.passedGate
+                  ? "bg-sealed/10 text-sealed"
+                  : "bg-claim/10 text-claim"
+              }`}
+            >
               {result.agreement.passedGate
                 ? "Alignment gate passed"
                 : "Below gate — re-tap 4 points"}
-            </Badge>
+            </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-            <div className="rounded-lg bg-surface border border-border p-2.5">
-              <div className="text-muted-foreground">Median surface gap</div>
-              <div className="text-sm font-semibold mt-0.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 tabular-nums">
+            <div className="rounded-2xl bg-surface border border-border px-3.5 py-3 shadow-[0_1px_2px_rgba(11,19,36,0.04)]">
+              <div className="text-[13px] leading-[18px] text-muted-foreground">Median surface gap</div>
+              <div className="mt-1 text-[15px] leading-[20px] font-semibold text-foreground">
                 {(result.agreement.medianGapMeters * 100).toFixed(2)} cm
               </div>
             </div>
-            <div className="rounded-lg bg-surface border border-border p-2.5">
-              <div className="text-muted-foreground">Within 5 cm</div>
-              <div className="text-sm font-semibold mt-0.5">
+            <div className="rounded-2xl bg-surface border border-border px-3.5 py-3 shadow-[0_1px_2px_rgba(11,19,36,0.04)]">
+              <div className="text-[13px] leading-[18px] text-muted-foreground">Within 5 cm</div>
+              <div className="mt-1 text-[15px] leading-[20px] font-semibold text-foreground">
                 {Math.round(result.agreement.shareWithin5cm * 100)}% ({result.agreement.sampledCount.toLocaleString()} pts)
               </div>
             </div>
-            <div className="rounded-lg bg-surface border border-border p-2.5">
-              <div className="text-muted-foreground">Solved scale</div>
-              <div className="text-sm font-semibold mt-0.5">
+            <div className="rounded-2xl bg-surface border border-border px-3.5 py-3 shadow-[0_1px_2px_rgba(11,19,36,0.04)]">
+              <div className="text-[13px] leading-[18px] text-muted-foreground">Solved scale</div>
+              <div className="mt-1 text-[15px] leading-[20px] font-semibold text-foreground">
                 {result.umeyama.scale.toFixed(4)}×
               </div>
             </div>
-            <div className="rounded-lg bg-surface border border-border p-2.5">
-              <div className="text-muted-foreground">Floor tilt</div>
-              <div className="text-sm font-semibold mt-0.5">
+            <div className="rounded-2xl bg-surface border border-border px-3.5 py-3 shadow-[0_1px_2px_rgba(11,19,36,0.04)]">
+              <div className="text-[13px] leading-[18px] text-muted-foreground">Floor tilt</div>
+              <div className="mt-1 text-[15px] leading-[20px] font-semibold text-foreground">
                 {result.umeyama.floorTiltDeg.toFixed(2)}°
               </div>
             </div>

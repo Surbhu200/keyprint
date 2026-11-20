@@ -3,10 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRight,
   CheckCircle2,
   Download,
   Info,
+  ScanFace,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -83,7 +83,7 @@ export default function SampleApartmentPage() {
               <ShieldCheck className="h-3.5 w-3.5" />
               Illustrative sample · not a live lease
             </Badge>
-            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-balance">
+            <h1 className="font-display text-[40px] font-semibold leading-[1.02] tracking-[-0.035em] text-balance sm:text-[52px]">
               Sample: how a $200 deposit gets settled without court
             </h1>
             <p className="text-base text-muted-foreground">
@@ -108,8 +108,8 @@ export default function SampleApartmentPage() {
                 "w-full sm:w-auto",
               )}
             >
+              <ScanFace className="h-4 w-4" />
               Try solo seal yourself
-              <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
               href={`/verify?recordId=${REFERENCE_VERIFIED_MOVE_IN_RECORD_ID}`}
@@ -247,7 +247,7 @@ export default function SampleApartmentPage() {
                 </div>
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant="secondary"
                   className="h-11 w-full px-4 text-sm sm:h-9 sm:w-auto sm:px-3.5 sm:text-xs"
                   onClick={() =>
                     focusSpot(
@@ -273,16 +273,16 @@ export default function SampleApartmentPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="rounded-xl bg-sealed/5 border border-sealed/20 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-sealed">
+                  <div className="text-[13px] font-medium text-sealed">
                     Returned to renter
                   </div>
-                  <div className="text-3xl font-semibold mt-1">$160</div>
+                  <div className="money font-display text-3xl font-semibold mt-1">$160</div>
                 </div>
                 <div className="rounded-xl bg-muted/40 border border-border p-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <div className="text-[13px] font-medium text-muted-foreground">
                     Paid to landlord
                   </div>
-                  <div className="text-2xl font-semibold mt-1">$40</div>
+                  <div className="money font-display text-2xl font-semibold mt-1">$40</div>
                 </div>
               </CardContent>
             </Card>

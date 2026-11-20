@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Clock, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 
@@ -136,53 +135,57 @@ export function Countdown({
   }, [isExpired, leaseId, hasManualRelease, manualReleaseLabel]);
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div className="space-y-1">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {displayExpired ? (
-            <ShieldCheck className="h-3.5 w-3.5 text-sealed" />
-          ) : (
-            <Clock className="h-3.5 w-3.5 text-accent" />
+    <div className="card-soft flex flex-col gap-3 p-5 sm:p-6">
+      <div className="flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
+        <span
+          aria-hidden="true"
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            displayExpired ? "bg-sealed" : "bg-accent motion-safe:animate-pulse",
           )}
-          <span>{displayExpired ? "Deadline reached" : "Time left"}</span>
-        </div>
-        <p className="text-sm text-foreground">
-          {displayExpired ? expiredMessage : activeMessage}
-        </p>
-        {keeperStatus && (
-          <p
-            className={cn(
-              "text-sm font-medium",
-              keeperStatus === "Keyprint released it." ? "text-sealed" : "text-muted-foreground",
-            )}
-            aria-live="polite"
-          >
-            {keeperStatus}
-          </p>
-        )}
+        />
+        <span>{displayExpired ? "Deadline reached" : "Time left"}</span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:flex-nowrap sm:gap-4">
-        {/* Accent (not red: red means claim) in the final 10 seconds draws the eye. */}
-        <div
-          role="timer"
-          className={cn(
-            "text-4xl font-semibold tabular-nums tracking-tight transition-colors motion-reduce:transition-none",
-            displayExpired
-              ? "text-sealed"
-              : remaining <= 10
-                ? "text-accent"
-                : "text-foreground",
-          )}
-        >
-          {formatRemaining(remaining)}
-        </div>
-        {isExpired && onManualRelease && (
-          <Button onClick={onManualRelease} disabled={releasing} className="w-full sm:w-auto">
-            {releasing ? "Releasing…" : manualReleaseLabel}
-          </Button>
+      {/* Accent (not red: red means claim) in the final 10 seconds draws the eye. */}
+      <div
+        role="timer"
+        className={cn(
+          "money font-display text-[52px] transition-colors duration-200 motion-reduce:transition-none sm:text-[56px]",
+          displayExpired
+            ? "text-sealed"
+            : remaining <= 10
+              ? "text-accent"
+              : "text-foreground",
         )}
+      >
+        {formatRemaining(remaining)}
       </div>
+
+      <p className="max-w-[60ch] text-[15px] leading-snug text-foreground/80">
+        {displayExpired ? expiredMessage : activeMessage}
+      </p>
+      {keeperStatus && (
+        <p
+          className={cn(
+            "text-[14px] font-medium",
+            keeperStatus === "Keyprint released it." ? "text-sealed" : "text-muted-foreground",
+          )}
+          aria-live="polite"
+        >
+          {keeperStatus}
+        </p>
+      )}
+
+      {isExpired && onManualRelease && (
+        <Button
+          onClick={onManualRelease}
+          disabled={releasing}
+          className="mt-1 h-12 w-full rounded-2xl text-[15px] sm:w-auto sm:self-start"
+        >
+          {releasing ? "Releasing…" : manualReleaseLabel}
+        </Button>
+      )}
     </div>
   );
 }

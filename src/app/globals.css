@@ -1,25 +1,42 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-background: #faf8f5;
+  /* App surfaces: "blueprint and brass" (cool plan-white paper, navy ink) */
+  --color-background: #f3f5f8;
   --color-surface: #ffffff;
-  --color-muted: #f2efe9;
-  --color-border: #e5e0d8;
-  --color-foreground: #161616;
-  --color-muted-foreground: #5c5852;
+  --color-muted: #eaeef3;
+  --color-border: #d9dfe8;
+  --color-foreground: #0b1324;
+  --color-muted-foreground: #556070;
 
-  /* Single primary accent + strictly semantic status colors */
-  --color-accent: #1d4ed8;
+  /* Survey blue for links, focus and small highlights + strictly semantic status colors */
+  --color-accent: #2f6bff;
   --color-accent-foreground: #ffffff;
   --color-sealed: #15803d;
   --color-suggestion: #b45309;
   --color-claim: #b91c1c;
   --color-landlord: #6d28d9;
 
+  /* Ink surfaces (landing hero, vault money cards, primary buttons) */
+  --color-ink: #0a1a33;
+  --color-ink-2: #12264a;
+  --color-on-ink: #f4f6fa;
+  --color-on-ink-muted: #a9b4c7;
+  --color-accent-bright: #8fb0ff;
+  --color-sealed-bright: #e3b95f; /* key brass: seal / protected highlights on ink only */
+  --color-stage: #08142a; /* 3D viewer background */
+
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* Use as motion-safe:animate-rise so reduced-motion users get no animation. */
   --animate-rise: kp-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Movement only, no fade: for above-the-fold text that must show on first paint. */
+  --animate-lift: kp-lift 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-scan: kp-scan 2.8s linear infinite;
 }
 
 @keyframes kp-rise {
@@ -33,14 +50,95 @@
   }
 }
 
+@keyframes kp-lift {
+  from {
+    transform: translateY(12px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes kp-scan {
+  from {
+    top: 0%;
+  }
+  to {
+    top: 100%;
+  }
+}
+
+/* Shared utilities (other packages use these class names) */
+@utility card-soft {
+  border-radius: 24px;
+  background: var(--color-surface);
+  border: 0;
+  box-shadow:
+    0 1px 2px rgb(11 19 36 / 0.04),
+    0 8px 24px -8px rgb(11 19 36 / 0.1);
+}
+
+@utility vault {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  color: #ffffff;
+  background-color: var(--color-ink);
+  background-image: radial-gradient(
+    120% 90% at 100% 0%,
+    rgb(47 107 255 / 0.3),
+    transparent 60%
+  );
+  box-shadow: 0 24px 60px -24px rgb(10 26 51 / 0.55);
+}
+
+@utility eyebrow {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+@utility money {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Archivo's width axis: slightly expanded display type */
+.font-display {
+  font-stretch: 112%;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background-color: rgb(29 78 216 / 0.18);
+  background-color: rgb(47 107 255 / 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
