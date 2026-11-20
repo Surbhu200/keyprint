@@ -169,6 +169,9 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
+  }
 
   try {
     const client = createArcPublicClient();

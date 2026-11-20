@@ -36,6 +36,7 @@ import {
 } from "@/lib/evidence/manifest";
 import { saveRecordManifests } from "@/lib/evidence/record-store";
 import { REFERENCE_MOVE_IN_URL } from "@/lib/sample/reference";
+import { isGlbFile, NOT_A_GLB_MESSAGE } from "@/lib/scan-file";
 import { uploadToPrivateStorage } from "@/lib/supabase/upload";
 import { cn } from "@/lib/utils";
 
@@ -368,10 +369,14 @@ export default function SoloNewUnitPage() {
                   <span>Import .glb scan from device</span>
                   <input
                     type="file"
-                    accept=".glb,model/gltf-binary"
                     className="sr-only"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
+                      if (f && !isGlbFile(f)) {
+                        window.alert(NOT_A_GLB_MESSAGE);
+                        e.target.value = "";
+                        return;
+                      }
                       if (f) handleScanChange(f);
                     }}
                   />

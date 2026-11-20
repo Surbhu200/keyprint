@@ -55,9 +55,9 @@ The evidence is starting to exist by law: California's AB 2801 now requires land
 
 Other tools already document apartments well:
 
-- **[Tenant Trace](https://apps.apple.com/app/id6764883731)** (iOS) already offers LiDAR scans, cryptographically fingerprinted photos, public verification and co-signing. Its listing doesn't mention handling the deposit.
+- **[Tenant Trace](https://apps.apple.com/app/id6764883731)** (iOS) already offers LiDAR scans, cryptographically fingerprinted photos, public verification and co-signing. It helps renters document the unit to protect a deposit, but its listing doesn't mention holding the deposit or settling claims.
 - **[RentCheck](https://www.getrentcheck.com/)** is sold to property managers and guides tenants through timestamped photos.
-- **Deposit alternatives** replace the deposit instead of protecting it. Per the [National Consumer Law Center's 2026 report](https://www.nclc.org/wp-content/uploads/2026/05/2026.05_Report_Tenant-Insecurity_corrected.pdf): with Rhino / Greenlight Rent the renter pays a nonrefundable surety-bond premium and repays claims the bond pays out; LeaseLock is zero-deposit insurance with a monthly fee; Obligo charges the renter's account, and NCLC found it required no proof of claims.
+- **Deposit alternatives** replace the deposit instead of protecting it. Per the [National Consumer Law Center's 2026 report](https://www.nclc.org/wp-content/uploads/2026/05/2026.05_Report_Tenant-Insecurity_corrected.pdf): with Rhino the renter pays a nonrefundable surety-bond premium and repays claims the bond pays out; LeaseLock is zero-deposit insurance with a monthly fee; Obligo charges the renter's account, and NCLC found it required no proof of claims.
 
 **Keyprint's difference is that the evidence and the money live together.** The deposit sits in an ownerless escrow on Arc. The contract only accepts a claim backed by the landlord's own evidence sealed after move-out, and in Keyprint that evidence is a priced pin on the sealed 3D record (a claim filed around the app is flagged "Not a priced pin" next to a Dispute button). Missed deadlines default in code: no claims means a full refund, an unanswered claim counts as accepted, and an unresolved dispute goes back to the renter. And the renter owns the record and can use it alone in free Solo mode, with no landlord sign-up.
 

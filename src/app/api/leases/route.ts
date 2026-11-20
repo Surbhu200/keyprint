@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid lease payload." }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid lease payload." }, { status: 400 });
+  }
 
   const leaseId = String(body.lease_id ?? "").toLowerCase();
   if (!HEX32.test(leaseId)) {

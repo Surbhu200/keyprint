@@ -3,7 +3,9 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { ProjectedPin2D } from "./matching";
 
-export const AI_PROMPT_VERSION = "keyprint-diff-v3";
+// v4: Gemini returns boxes in its native 0-1000 box_2d format (converted to pixels below), so
+// reports cached under v3, whose Gemini boxes could be off, are never reused.
+export const AI_PROMPT_VERSION = "keyprint-diff-v4";
 
 export const ChangeSchema = z.object({
   view_id: z.string(),
@@ -48,6 +50,13 @@ interface LabeledPair {
   afterBase64: string;
 }
 
+const PIXEL_BOX_RULE =
+  "- Provide pixel bounding boxes in the 1024x768 AFTER image (origin top-left, y down).";
+// Gemini is trained to locate things as box_2d = [ymin, xmin, ymax, xmax] on a 0-1000 scale and
+// tends to answer in that space even when asked for pixels, so it is asked for that directly.
+const GEMINI_BOX_RULE =
+  "- Provide box_2d for each change as [ymin, xmin, ymax, xmax] in the AFTER image, each value normalized to 0-1000.";
+
 const SYSTEM_PROMPT = `You are inspecting two 1024x768 3D room renders taken from the exact same camera viewpoint: BEFORE (move-in) and AFTER (move-out).
 
 List physical changes to the apartment unit between BEFORE and AFTER.
@@ -62,10 +71,34 @@ Label each item strictly as one of:
 Important rules:
 - These are suggestions for people to review, never legal or billing verdicts.
 - Never estimate repair costs or dollar amounts.
-- Provide pixel bounding boxes in the 1024x768 AFTER image (origin top-left, y down).
+${PIXEL_BOX_RULE}
 - Use low confidence whenever uncertain.
 - If a mark or scratch already existed identically in BEFORE and AFTER, do NOT flag it as a new change.
 - Set view_id to the exact view label (V1, V2, ...) written before each BEFORE/AFTER pair.`;
+
+const GEMINI_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(PIXEL_BOX_RULE, GEMINI_BOX_RULE);
+
+/** What Gemini returns: the same fields, with box_2d instead of a pixel box. */
+const GeminiReportSchema = z.object({
+  changes: z.array(ChangeSchema.omit({ box: true }).extend({ box_2d: z.array(z.number()) })),
+});
+
+/**
+ * Gemini's box_2d ([ymin, xmin, ymax, xmax], each 0-1000 of the image) as a pixel box in the
+ * 1024x768 render. Null when it isn't four finite numbers.
+ */
+export function fromGeminiBox(box2d: number[]): ChangeReportOutput["changes"][number]["box"] | null {
+  if (box2d.length !== 4 || !box2d.every((v) => Number.isFinite(v))) return null;
+  const [y0, x0, y1, x1] = box2d.map((v) => Math.min(Math.max(v, 0), 1000));
+  const xmin = Math.min(x0, x1);
+  const ymin = Math.min(y0, y1);
+  return {
+    x: (xmin / 1000) * RENDER_WIDTH,
+    y: (ymin / 1000) * RENDER_HEIGHT,
+    w: ((Math.max(x0, x1) - xmin) / 1000) * RENDER_WIDTH,
+    h: ((Math.max(y0, y1) - ymin) / 1000) * RENDER_HEIGHT,
+  };
+}
 
 const GEMINI_RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -76,15 +109,9 @@ const GEMINI_RESPONSE_SCHEMA = {
         type: "OBJECT",
         properties: {
           view_id: { type: "STRING" },
-          box: {
-            type: "OBJECT",
-            properties: {
-              x: { type: "NUMBER" },
-              y: { type: "NUMBER" },
-              w: { type: "NUMBER" },
-              h: { type: "NUMBER" },
-            },
-            required: ["x", "y", "w", "h"],
+          box_2d: {
+            type: "ARRAY",
+            items: { type: "INTEGER" },
           },
           title: { type: "STRING" },
           description: { type: "STRING" },
@@ -97,7 +124,7 @@ const GEMINI_RESPONSE_SCHEMA = {
             enum: ["low", "medium", "high"],
           },
         },
-        required: ["view_id", "box", "title", "description", "category", "confidence"],
+        required: ["view_id", "box_2d", "title", "description", "category", "confidence"],
       },
     },
   },
@@ -187,7 +214,7 @@ async function geminiCall(
           "x-goog-api-key": apiKey,
         },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          systemInstruction: { parts: [{ text: GEMINI_SYSTEM_PROMPT }] },
           contents: [{ role: "user", parts }],
           generationConfig: {
             temperature: 0.2,
@@ -207,10 +234,16 @@ async function geminiCall(
     };
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawText) return null;
-    const parsed = ChangeReportSchema.safeParse(JSON.parse(rawText));
-    if (parsed.success) return { report: parsed.data, model };
-    console.warn(`Gemini ${model} schema validation mismatch:`, parsed.error.message);
-    return null;
+    const parsed = GeminiReportSchema.safeParse(JSON.parse(rawText));
+    if (!parsed.success) {
+      console.warn(`Gemini ${model} schema validation mismatch:`, parsed.error.message);
+      return null;
+    }
+    const changes = parsed.data.changes.flatMap(({ box_2d, ...rest }) => {
+      const box = fromGeminiBox(box_2d);
+      return box ? [{ ...rest, box }] : [];
+    });
+    return { report: { changes }, model };
   } catch (err) {
     console.warn(`Gemini ${model} request error:`, err instanceof Error ? err.message : err);
     return null;

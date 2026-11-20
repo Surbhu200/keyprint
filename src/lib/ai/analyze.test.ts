@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { normalizeReport } from "./analyze";
+import { fromGeminiBox, normalizeReport } from "./analyze";
+
+describe("fromGeminiBox", () => {
+  it("turns Gemini's 0-1000 [ymin, xmin, ymax, xmax] into a 1024x768 pixel box", () => {
+    // The floor stain in the synthetic test render sits at about x 560-720, y 560-650 px.
+    expect(fromGeminiBox([729, 547, 851, 703])).toEqual({
+      x: 560.128,
+      y: 559.872,
+      w: (156 / 1000) * 1024,
+      h: (122 / 1000) * 768,
+    });
+  });
+
+  it("accepts swapped corners, clamps to the image, and rejects malformed boxes", () => {
+    expect(fromGeminiBox([1000, 1000, 0, 0])).toEqual({ x: 0, y: 0, w: 1024, h: 768 });
+    expect(fromGeminiBox([-50, 0, 2000, 500])).toEqual({ x: 0, y: 0, w: 512, h: 768 });
+    expect(fromGeminiBox([1, 2, 3])).toBeNull();
+    expect(fromGeminiBox([1, 2, 3, Number.NaN])).toBeNull();
+  });
+});
 
 const base = {
   title: "Stain",

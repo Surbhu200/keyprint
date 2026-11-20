@@ -85,6 +85,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return bad(400, "Invalid request.");
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return bad(400, "Invalid request.");
+  }
 
   const leaseId = String(body.leaseId ?? "").toLowerCase();
   const moveInRecordId = String(body.moveInRecordId ?? "").toLowerCase();
@@ -97,8 +100,19 @@ export async function POST(req: NextRequest) {
   if (rawPairs.length === 0 || rawPairs.length > 12) {
     return bad(400, "Provide between 1 and 12 render viewpoint pairs.");
   }
-  if (rawPairs.some((p) => !VIEW_ID.test(String(p.viewId ?? "")))) {
+  if (rawPairs.some((p) => !p || typeof p !== "object" || !VIEW_ID.test(String(p.viewId ?? "")))) {
     return bad(400, "Invalid view id.");
+  }
+  // Only this lease's own render folder may be read; refuse anything else before any work.
+  const renderPrefix = `leases/${leaseId}/renders/`;
+  const renderPathOk = (path: unknown) =>
+    path === undefined ||
+    (typeof path === "string" &&
+      !path.includes("..") &&
+      isSafeStoragePath(path) &&
+      path.toLowerCase().startsWith(renderPrefix));
+  if (rawPairs.some((p) => !renderPathOk(p.beforePath) || !renderPathOk(p.afterPath))) {
+    return bad(400, "Render path is not allowed.");
   }
   const inlineChars = rawPairs.reduce(
     (n, p) => n + (p.beforeBase64?.length ?? 0) + (p.afterBase64?.length ?? 0),
