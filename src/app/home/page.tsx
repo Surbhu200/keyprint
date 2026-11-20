@@ -385,10 +385,10 @@ export default function HomePage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2.5">
+            <div className="grid gap-2.5 sm:flex sm:flex-wrap">
               <Link
                 href="/unit/new"
-                className={cn(buttonVariants({ variant: "default" }))}
+                className={cn(buttonVariants({ variant: "default" }), "w-full sm:w-auto")}
               >
                 <Sparkles className="h-4 w-4" />
                 Start solo scan
@@ -396,6 +396,7 @@ export default function HomePage() {
               {session && (
                 <Button
                   variant="secondary"
+                  className="w-full sm:w-auto"
                   onClick={() => setShowCreate((v) => !v)}
                 >
                   <Plus className="h-4 w-4" />
@@ -405,7 +406,7 @@ export default function HomePage() {
               {!session && (
                 <Link
                   href="/start"
-                  className={cn(buttonVariants({ variant: "secondary" }))}
+                  className={cn(buttonVariants({ variant: "secondary" }), "w-full sm:w-auto")}
                 >
                   Sign in
                 </Link>
@@ -424,11 +425,11 @@ export default function HomePage() {
                     Propose the deposit, deadlines, and independent reviewer. Your renter sees every term before paying.
                   </CardDescription>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-1.5">
                   <Button
                     type="button"
-                    size="sm"
                     variant="outline"
+                    className="h-auto min-h-11 w-full justify-start whitespace-normal px-3.5 py-2 text-left text-sm leading-snug sm:min-h-9 sm:w-auto sm:py-1.5 sm:text-xs"
                     onClick={() => {
                       setUnitName("Lease A · Apt 302");
                       setDepositDollars("200");
@@ -440,8 +441,8 @@ export default function HomePage() {
                   </Button>
                   <Button
                     type="button"
-                    size="sm"
                     variant="outline"
+                    className="h-auto min-h-11 w-full justify-start whitespace-normal px-3.5 py-2 text-left text-sm leading-snug sm:min-h-9 sm:w-auto sm:py-1.5 sm:text-xs"
                     onClick={() => {
                       setUnitName("Lease B · Apt 404 (no-claim refund)");
                       setDepositDollars("100");
@@ -457,17 +458,17 @@ export default function HomePage() {
             <CardContent>
               <form onSubmit={handleCreateLease} className="space-y-4">
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <label className="space-y-1 text-xs font-medium block">
+                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
                     <span>Apartment name</span>
                     <input
                       type="text"
                       required
                       value={unitName}
                       onChange={(e) => setUnitName(e.target.value)}
-                      className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                     />
                   </label>
-                  <label className="space-y-1 text-xs font-medium block">
+                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
                     <span>Security deposit ($)</span>
                     <input
                       type="number"
@@ -476,10 +477,10 @@ export default function HomePage() {
                       required
                       value={depositDollars}
                       onChange={(e) => setDepositDollars(e.target.value)}
-                      className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                     />
                   </label>
-                  <label className="space-y-1 text-xs font-medium block">
+                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
                     <span>Renter account ID (from their Details drawer)</span>
                     <input
                       type="text"
@@ -487,10 +488,13 @@ export default function HomePage() {
                       value={renterAddr}
                       onChange={(e) => setRenterAddr(e.target.value)}
                       placeholder="Paste renter account ID"
-                      className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm font-mono"
                     />
                   </label>
-                  <label className="space-y-1 text-xs font-medium block">
+                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
                     <span>Dispute reviewer account ID (prefilled with the demo reviewer)</span>
                     <input
                       type="text"
@@ -498,10 +502,13 @@ export default function HomePage() {
                       value={reviewerAddr}
                       onChange={(e) => setReviewerAddr(e.target.value)}
                       placeholder="Paste neutral reviewer ID"
-                      className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm font-mono"
                     />
                   </label>
-                  <label className="space-y-1 text-xs font-medium block">
+                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
                     <span>Claim / response / review windows (minutes, min 1)</span>
                     <input
                       type="number"
@@ -509,10 +516,10 @@ export default function HomePage() {
                       required
                       value={windowMinutes}
                       onChange={(e) => setWindowMinutes(e.target.value)}
-                      className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                     />
                   </label>
-                  <label className="space-y-1 text-xs font-medium block">
+                  <label className="space-y-1 text-sm sm:text-xs font-medium block">
                     <span>Lease ends in (minutes from now; 0 = move-out allowed right away)</span>
                     <input
                       type="number"
@@ -520,7 +527,7 @@ export default function HomePage() {
                       required
                       value={leaseEndOffsetMin}
                       onChange={(e) => setLeaseEndOffsetMin(e.target.value)}
-                      className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                      className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                     />
                   </label>
                 </div>
@@ -529,13 +536,14 @@ export default function HomePage() {
                   <p className="text-xs text-claim">{createError}</p>
                 )}
 
-                <div className="flex items-center gap-2">
-                  <Button type="submit" disabled={creating}>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+                  <Button type="submit" disabled={creating} className="w-full sm:w-auto">
                     {creating ? "Creating lease…" : "Create lease with one touch"}
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
+                    className="w-full sm:w-auto"
                     onClick={() => setShowCreate(false)}
                   >
                     Cancel
@@ -554,13 +562,14 @@ export default function HomePage() {
                 Send this link to your renter. They&apos;ll see every term before paying the deposit.
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <code className="flex-1 min-w-0 truncate rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs">
+                {/* Phones: the link gets its own row and the two buttons split the next one. */}
+                <code className="flex-1 basis-full sm:basis-0 min-w-0 truncate rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs">
                   {shareLink}
                 </code>
                 <Button
                   type="button"
-                  size="sm"
                   variant="outline"
+                  className="flex-1 sm:flex-none"
                   onClick={() => {
                     void navigator.clipboard
                       ?.writeText(shareLink)
@@ -572,7 +581,7 @@ export default function HomePage() {
                 </Button>
                 <Link
                   href={`/lease/${lastCreated.leaseId}/capture`}
-                  className={cn(buttonVariants({ size: "sm" }))}
+                  className={cn(buttonVariants(), "flex-1 sm:flex-none")}
                 >
                   Open lease
                 </Link>
@@ -619,11 +628,19 @@ export default function HomePage() {
               </CardContent>
             </Card>
           ) : loading ? (
-            <Card>
-              <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                Loading apartments…
-              </CardContent>
-            </Card>
+            <div role="status" className="space-y-4">
+              <span className="sr-only">Loading apartments…</span>
+              {[0, 1].map((i) => (
+                <div
+                  key={i}
+                  className="space-y-3 rounded-2xl border border-border bg-surface p-6"
+                >
+                  <div className="h-5 w-1/2 rounded-md bg-muted motion-safe:animate-pulse" />
+                  <div className="h-4 w-1/3 rounded-md bg-muted motion-safe:animate-pulse" />
+                  <div className="h-11 w-full rounded-lg bg-muted motion-safe:animate-pulse sm:w-40" />
+                </div>
+              ))}
+            </div>
           ) : leases.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center space-y-3">
@@ -687,11 +704,16 @@ export default function HomePage() {
                     <CardContent className="p-6 space-y-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-lg font-semibold">{meta.unit_name}</h3>
-                            {role && <Badge variant="accent">{role}</Badge>}
+                            {role && (
+                              <Badge variant="accent" className="whitespace-nowrap">
+                                {role}
+                              </Badge>
+                            )}
                             {onchain && (
                               <Badge
+                                className="whitespace-nowrap"
                                 variant={
                                   state === 3
                                     ? "sealed"
@@ -719,10 +741,10 @@ export default function HomePage() {
 
                         <Link
                           href={nextHref}
-                          className={cn(buttonVariants({ variant: "default", size: "sm" }))}
+                          className={cn(buttonVariants({ variant: "default" }), "w-full sm:w-auto")}
                         >
                           Open apartment
-                          <ArrowRight className="h-3.5 w-3.5" />
+                          <ArrowRight className="h-4 w-4" />
                         </Link>
                       </div>
 

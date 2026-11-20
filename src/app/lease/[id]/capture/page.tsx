@@ -4,7 +4,9 @@ import { use, useState } from "react";
 import Link from "next/link";
 import { encodeFunctionData, erc20Abi, type Hex } from "viem";
 import {
+  Camera,
   CheckCircle2,
+  Fingerprint,
   MapPin,
   ShieldCheck,
   Trash2,
@@ -331,7 +333,12 @@ export default function LeaseCapturePage({
 
   return (
     <LeaseShell leaseId={leaseId} live={live}>
-      <div className="space-y-6">
+      <div
+        className={cn(
+          "space-y-6",
+          (sealedInfo || (isRenter && !alreadyFunded)) && "max-lg:pb-40",
+        )}
+      >
         {(sealedInfo || alreadyFunded) && (
           <SealAnimation
             title={
@@ -369,32 +376,32 @@ export default function LeaseCapturePage({
             />
 
             {!alreadyFunded && (
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span>Loaded: {scanName}</span>
-                <div className="flex items-center gap-2">
-                  {!scanFile && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      title="Demo shortcut for the bundled sample model"
-                      onClick={() =>
-                        setPendingTap({
-                          point: REFERENCE_SPOTS.deskScratch.position,
-                          normal: REFERENCE_SPOTS.deskScratch.normal,
-                        })
-                      }
-                    >
-                      Demo: pin desk scratch
-                    </Button>
+              <div className="space-y-2.5">
+                <p className="text-sm text-muted-foreground">
+                  {scanFile ? (
+                    <>
+                      Your scan:{" "}
+                      <span className="break-all font-medium text-foreground">{scanName}</span>
+                    </>
+                  ) : (
+                    "Showing the sample apartment (a public research scan), not your home. Import your own scan to seal your apartment."
                   )}
-                  <label className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 font-medium text-foreground cursor-pointer hover:bg-muted">
-                    <Upload className="h-3.5 w-3.5" />
+                </p>
+                <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+                  <label
+                    className={cn(
+                      "flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 text-sm font-semibold focus-within:ring-2 focus-within:ring-accent sm:min-h-10",
+                      scanFile
+                        ? "border-border bg-surface text-foreground hover:bg-muted"
+                        : "border-accent/40 bg-accent/5 text-accent hover:bg-accent/10",
+                    )}
+                  >
+                    <Upload className="h-4 w-4" />
                     Import custom .glb
                     <input
                       type="file"
                       accept=".glb,model/gltf-binary"
-                      className="hidden"
+                      className="sr-only"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
                         if (f) {
@@ -405,6 +412,23 @@ export default function LeaseCapturePage({
                       }}
                     />
                   </label>
+                  {!scanFile && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      title="Demo shortcut for the bundled sample model"
+                      className="max-sm:h-11 max-sm:text-sm"
+                      onClick={() =>
+                        setPendingTap({
+                          point: REFERENCE_SPOTS.deskScratch.position,
+                          normal: REFERENCE_SPOTS.deskScratch.normal,
+                        })
+                      }
+                    >
+                      Demo: pin desk scratch
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
@@ -412,39 +436,45 @@ export default function LeaseCapturePage({
 
           <div className="space-y-4">
             {pendingTap && !alreadyFunded && (
-              <Card className="border-accent/40">
-                <CardHeader className="pb-3">
+              <Card className="border-accent/40 transition-[translate,opacity] duration-200 ease-out motion-reduce:transition-none max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-40 max-lg:mb-0 max-lg:max-h-[80svh] max-lg:overflow-y-auto max-lg:rounded-b-none max-lg:border-x-0 max-lg:border-b-0 max-lg:pb-[env(safe-area-inset-bottom)] max-lg:shadow-[0_-12px_32px_rgba(22,22,22,0.16)] max-lg:starting:translate-y-6 max-lg:starting:opacity-0">
+                <div
+                  aria-hidden="true"
+                  className="mx-auto mt-2 h-1 w-10 rounded-full bg-border lg:hidden"
+                />
+                <CardHeader className="pb-3 max-lg:px-4 max-lg:pt-2 max-lg:pb-2">
                   <CardTitle className="text-base flex items-center gap-1.5">
                     <MapPin className="h-4 w-4 text-accent" />
                     Pin existing damage
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-3 max-lg:space-y-2.5 max-lg:px-4 max-lg:pb-4">
                   <input
                     type="text"
                     value={pinText}
                     onChange={(e) => setPinText(e.target.value)}
                     placeholder="Scratch on desk, already here"
-                    className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                    aria-label="Describe the existing damage"
+                    className="w-full h-11 rounded-lg border border-border bg-background px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                   />
-                  <label className="block text-xs text-muted-foreground">
-                    Attach photo (hashed into proof)
+                  <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-3 text-sm font-medium text-foreground hover:bg-muted focus-within:ring-2 focus-within:ring-accent">
+                    <Camera className="h-4 w-4 shrink-0 text-accent" />
+                    <span className="min-w-0 truncate">
+                      {pinPhoto
+                        ? `Photo added · ${pinPhoto.name}`
+                        : "Attach photo (hashed into proof)"}
+                    </span>
                     <input
                       type="file"
                       accept="image/*"
                       onChange={(e) => setPinPhoto(e.target.files?.[0] ?? null)}
-                      className="mt-1 block w-full text-xs"
+                      className="sr-only"
                     />
                   </label>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={handleAddPin} className="flex-1">
+                    <Button onClick={handleAddPin} className="flex-1">
                       Already here
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setPendingTap(null)}
-                    >
+                    <Button variant="ghost" onClick={() => setPendingTap(null)}>
                       Cancel
                     </Button>
                   </div>
@@ -560,17 +590,32 @@ export default function LeaseCapturePage({
                   )}
 
                   {!isRenter && live.lease ? (
-                    <p className="text-xs text-muted-foreground">
-                      Sign in with the renter&apos;s passkey to seal and protect this deposit.
-                    </p>
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        {!session
+                          ? "Only this lease’s renter can seal the move-in scan and pay the deposit. Sign in with your passkey, then open this lease again from Your apartments."
+                          : session.address.toLowerCase() === live.lease.landlord.toLowerCase()
+                            ? "Waiting for your renter to seal the move-in scan and protect the deposit. This page updates by itself."
+                            : "Only this lease’s renter can seal the move-in scan and pay the deposit."}
+                      </p>
+                      {!session && (
+                        <Link
+                          href="/start"
+                          className={cn(buttonVariants({ size: "lg" }), "w-full")}
+                        >
+                          <Fingerprint className="h-4 w-4" />
+                          Sign in with your passkey
+                        </Link>
+                      )}
+                    </div>
                   ) : (
                     <Button
                       size="lg"
-                      className="w-full"
+                      className="w-full h-auto min-h-12 whitespace-normal py-3 leading-snug max-lg:hidden"
                       disabled={busy !== null || !live.lease}
                       onClick={handleSealAndPay}
                     >
-                      <CheckCircle2 className="h-4 w-4" />
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
                       {busy ??
                         (live.lease
                           ? `Seal & protect ${formatDollars(live.lease.deposit)}`
@@ -591,6 +636,41 @@ export default function LeaseCapturePage({
             )}
           </div>
         </div>
+
+        {/* Phones: the seal action stays in reach (desktop keeps the in-card button). */}
+        {isRenter && live.lease && !alreadyFunded && !sealedInfo && !pendingTap && (
+          <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(22,22,22,0.08)] backdrop-blur-md">
+            {error && <p className="mb-2 text-sm text-claim">{error}</p>}
+            <p className="mb-2 text-center text-xs text-muted-foreground">
+              Paying accepts the Deposit Terms on this page.
+            </p>
+            <Button
+              size="lg"
+              className="w-full h-auto min-h-12 whitespace-normal py-3 leading-snug"
+              disabled={busy !== null || !live.lease}
+              onClick={handleSealAndPay}
+            >
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              {busy ?? `Seal & protect ${formatDollars(live.lease.deposit)}`}
+            </Button>
+          </div>
+        )}
+
+        {/* Phones: confirm the seal right where the renter tapped. */}
+        {sealedInfo && live.lease && (
+          <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 space-y-3 border-t border-border bg-surface px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(22,22,22,0.08)]">
+            <SealAnimation
+              title={`${formatDollars(live.lease.deposit)} deposit protected`}
+              sealedAtIso={sealedInfo.sealedAt}
+            />
+            <Link
+              href={`/lease/${leaseId}/room`}
+              className={cn(buttonVariants({ size: "lg" }), "w-full")}
+            >
+              Open 3D room &amp; pins
+            </Link>
+          </div>
+        )}
       </div>
     </LeaseShell>
   );

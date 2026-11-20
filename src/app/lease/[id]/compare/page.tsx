@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   Eye,
+  Loader2,
   Plus,
   Sparkles,
   Upload,
@@ -143,7 +144,7 @@ export default function LeaseComparePage({
   const [alignment, setAlignment] = useState<AlignmentOutput | null>(null);
   const [changes, setChanges] = useState<ReviewableChange[]>([]);
   const [aiSource, setAiSource] = useState<string | null>(null);
-  const [promptVersion, setPromptVersion] = useState("keyprint-diff-v2");
+  const [promptVersion, setPromptVersion] = useState("keyprint-diff-v3");
   const [viewIds, setViewIds] = useState<string[]>([]);
   const [viewSnapshots, setViewSnapshots] = useState<
     Record<string, { before: string; after: string }>
@@ -219,7 +220,7 @@ export default function LeaseComparePage({
   const alignmentSummary =
     alignment?.agreement.summaryText ??
     (sealedAlignment
-      ? `Sealed line-up: half the room within ${(sealedAlignment.medianGapMeters * 100).toFixed(1)} cm; ${Math.round(sealedAlignment.shareWithin5cm * 100)}% within 5 cm`
+      ? `Sealed line-up: median surface gap ${(sealedAlignment.medianGapMeters * 100).toFixed(1)} cm; ${Math.round(sealedAlignment.shareWithin5cm * 100)}% of the scan within 5 cm`
       : savedAlignmentUsable
         ? savedMetrics?.summaryText ?? null
         : null);
@@ -731,10 +732,11 @@ export default function LeaseComparePage({
               <div className="flex flex-wrap gap-2">
                 {!leaseEnded && live.lease?.state === 1 && (
                   <Button
+                    className="h-auto min-h-11 w-full whitespace-normal py-2.5 text-center leading-snug sm:w-auto"
                     disabled={busy !== null || !session}
                     onClick={handleEndLease}
                   >
-                    <CheckCircle2 className="h-4 w-4" />
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
                     {busy ?? "End lease & seal move-out"}
                   </Button>
                 )}
@@ -785,7 +787,7 @@ export default function LeaseComparePage({
             </div>
 
             {!leaseEnded && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {filteredCount > 0 && (
                   <Button
                     size="sm"
@@ -808,6 +810,18 @@ export default function LeaseComparePage({
                   ? "Comparing…"
                   : "Run AI comparison"}
                 </Button>
+                {aiSource && (
+                  // A normal run returns the saved answer for these exact scans; this asks again.
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!alignmentPassed || busy !== null}
+                    onClick={() => handleRunAiCompare(true)}
+                    title="Ask the AI again instead of using the saved answer for these scans"
+                  >
+                    Run fresh
+                  </Button>
+                )}
               </div>
             )}
           </CardHeader>
@@ -874,6 +888,16 @@ export default function LeaseComparePage({
             </CardContent>
           ) : (
             <CardContent className="space-y-4">
+              {busy && (
+                <div
+                  role="status"
+                  className="flex items-center gap-2.5 rounded-xl border border-border bg-muted/50 px-3.5 py-2.5 text-sm text-foreground"
+                >
+                  <Loader2 className="h-4 w-4 shrink-0 text-accent motion-safe:animate-spin" />
+                  <span>{busy}</span>
+                </div>
+              )}
+
               {!alignmentPassed && (
                 <p className="text-xs text-muted-foreground">
                   Complete the 4-point alignment below and pass the surface-agreement gate to unlock AI comparison.
@@ -1030,7 +1054,7 @@ export default function LeaseComparePage({
                   value={manualTitle}
                   onChange={(e) => setManualTitle(e.target.value)}
                   placeholder="Add a change manually (e.g. Dark stain on carpet)"
-                  className="flex-1 h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                  className="flex-1 h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                 />
                 <select
                   value={manualCategory}
@@ -1039,7 +1063,7 @@ export default function LeaseComparePage({
                       e.target.value as "possible_damage" | "possible_wear",
                     )
                   }
-                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                  className="h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                 >
                   <option value="possible_damage">Possible damage</option>
                   <option value="possible_wear">Possibly normal wear</option>
@@ -1093,13 +1117,13 @@ export default function LeaseComparePage({
                 </CardDescription>
               </div>
 
-              <label className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium cursor-pointer hover:bg-muted">
+              <label className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm font-medium cursor-pointer hover:bg-muted focus-within:ring-2 focus-within:ring-accent sm:w-auto sm:min-h-0 sm:py-2 sm:text-xs">
                 <Upload className="h-3.5 w-3.5" />
                 Import move-out .glb
                 <input
                   type="file"
                   accept=".glb,model/gltf-binary"
-                  className="hidden"
+                  className="sr-only"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) {
@@ -1113,7 +1137,8 @@ export default function LeaseComparePage({
                 />
               </label>
             </CardHeader>
-            <CardContent>
+            {/* AlignmentTool's toolbar is the only flex row with direct button children: let it wrap on phones. */}
+            <CardContent className="[&_div:has(>button)]:flex-wrap">
               {moveInUrl ? (
                 <AlignmentTool
                   // A new move-out file starts a fresh line-up: no stale taps, scene or result.

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, ShieldCheck, Trash2, Upload } from "lucide-react";
+import { Camera, MapPin, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
 import { SealAnimation } from "@/components/SealAnimation";
 import { usePasskeySession } from "@/components/usePasskeySession";
@@ -360,16 +360,16 @@ export default function SoloNewUnitPage() {
                   onChange={(e) => setUnitName(e.target.value)}
                   disabled={Boolean(sealedRecord)}
                   aria-label="Apartment name"
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                  className="w-full h-11 sm:h-10 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                   placeholder="Unit name"
                 />
-                <label className="flex items-center justify-center gap-2 h-10 rounded-lg border border-dashed border-border bg-muted/40 px-3 text-xs font-medium cursor-pointer hover:bg-muted">
+                <label className="flex items-center justify-center gap-2 min-h-12 sm:min-h-10 rounded-lg border border-dashed border-border bg-muted/40 px-3 text-sm font-medium cursor-pointer hover:bg-muted focus-within:ring-2 focus-within:ring-accent">
                   <Upload className="h-3.5 w-3.5" />
                   <span>Import .glb scan from device</span>
                   <input
                     type="file"
                     accept=".glb,model/gltf-binary"
-                    className="hidden"
+                    className="sr-only"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) handleScanChange(f);
@@ -380,36 +380,42 @@ export default function SoloNewUnitPage() {
             </Card>
 
             {pendingTap && (
-              <Card className="border-accent/40">
-                <CardHeader className="pb-3">
+              // Phones: a bottom sheet over the tab bar that slides up via @starting-style (no JS);
+              // instant with Reduce Motion. Desktop keeps it in the side column.
+              <Card className="border-accent/40 transition-[translate,opacity] duration-200 ease-out motion-reduce:transition-none max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-40 max-lg:max-h-[80svh] max-lg:overflow-y-auto max-lg:rounded-b-none max-lg:border-x-0 max-lg:border-b-0 max-lg:pb-[env(safe-area-inset-bottom)] max-lg:shadow-[0_-12px_32px_rgba(22,22,22,0.16)] max-lg:starting:translate-y-6 max-lg:starting:opacity-0">
+                <div aria-hidden="true" className="mx-auto mt-2 h-1 w-10 rounded-full bg-border lg:hidden" />
+                <CardHeader className="pb-3 max-lg:px-4 max-lg:pt-2 max-lg:pb-2">
                   <CardTitle className="text-base flex items-center gap-1.5">
                     <MapPin className="h-4 w-4 text-accent" />
                     Add move-in pin
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-3 max-lg:space-y-2.5 max-lg:px-4 max-lg:pb-4">
                   <input
                     type="text"
                     value={pinText}
                     onChange={(e) => setPinText(e.target.value)}
                     placeholder="e.g. Scratch on desk, already here"
-                    className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                    aria-label="Describe this spot"
+                    className="w-full h-11 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                   />
-                  <label className="block text-xs text-muted-foreground">
-                    Optional close-up photo
+                  <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-3 text-sm font-medium text-foreground hover:bg-muted focus-within:ring-2 focus-within:ring-accent">
+                    <Camera className="h-4 w-4 shrink-0 text-accent" />
+                    <span className="min-w-0 truncate">
+                      {pinPhoto ? `Photo added · ${pinPhoto.name}` : "Optional close-up photo"}
+                    </span>
                     <input
                       type="file"
                       accept="image/*"
                       onChange={(e) => setPinPhoto(e.target.files?.[0] ?? null)}
-                      className="mt-1 block w-full text-xs"
+                      className="sr-only"
                     />
                   </label>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={handleAddPin} className="flex-1">
+                    <Button onClick={handleAddPin} className="flex-1">
                       Already here
                     </Button>
                     <Button
-                      size="sm"
                       variant="ghost"
                       onClick={() => setPendingTap(null)}
                     >
@@ -460,25 +466,25 @@ export default function SoloNewUnitPage() {
                 )}
 
                 {error && (
-                  <p className="text-xs text-claim pt-1" role="alert">
+                  <p className="text-sm text-claim pt-1" role="alert">
                     {error}
                   </p>
                 )}
                 {notice && <p className="text-xs text-muted-foreground pt-1">{notice}</p>}
 
                 <Button
-                  className="w-full mt-2"
+                  className="w-full mt-2 h-auto min-h-12 whitespace-normal py-3 text-center leading-snug"
                   size="lg"
                   disabled={busy !== null || !session || Boolean(sealedRecord)}
                   onClick={handleSealSolo}
                 >
-                  <ShieldCheck className="h-4 w-4" />
+                  <ShieldCheck className="h-4 w-4 shrink-0" />
                   {busy ?? (sealedRecord ? "Sealed ✓" : "Seal my apartment")}
                 </Button>
                 {sealedRecord && (
                   <Link
                     href={`/verify?recordId=${sealedRecord.recordId}`}
-                    className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
+                    className={cn(buttonVariants({ variant: "outline" }), "w-full")}
                   >
                     Check it on Verify
                   </Link>

@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { findChangeSpots, type ChangeSpot } from "./changeSpots";
 import {
   boxCenterToNdc,
   type BoundingBoxPx,
@@ -84,6 +85,7 @@ export function buildDefaultViewpoints(
     position: [number, number, number];
     normal?: [number, number, number];
   }>,
+  changeSpots: ChangeSpot[] = [],
 ): ViewpointSpec[] {
   const views: ViewpointSpec[] = [];
   moveInRoot.updateMatrixWorld(true);
@@ -107,6 +109,27 @@ export function buildDefaultViewpoints(
       lookAt: [...pin.position],
     });
   }
+
+  // Views aimed at spots where the move-out surface clearly differs from move-in, so a mark
+  // on a wall the overview cameras don't face still reaches the AI.
+  changeSpots.slice(0, 2).forEach((spot, i) => {
+    const dir = new THREE.Vector3(...spot.normal).normalize();
+    const spotPos = new THREE.Vector3(...spot.position);
+    const start = spotPos.clone().addScaledVector(dir, 0.02);
+    const clearance = firstHitDistance(moveInRoot, start, dir, 1.6);
+    // Close enough that a small mark fills a good part of the frame, with some context around it.
+    const distance = Math.max(0.4, Math.min(0.85, clearance - 0.15));
+    const camPos = spotPos.clone().addScaledVector(dir, distance);
+    if (Math.abs(dir.y) > 0.85) {
+      camPos.z += 0.65;
+      camPos.y += 0.25;
+    }
+    views.push({
+      viewId: `change-${i + 1}`,
+      cameraPos: [camPos.x, camPos.y, camPos.z],
+      lookAt: [...spot.position],
+    });
+  });
 
   const box = new THREE.Box3().setFromObject(moveInRoot);
   const center = box.getCenter(new THREE.Vector3());
@@ -215,8 +238,17 @@ export async function renderBeforeAfterPairs(params: {
   alignedMoveOut.matrix.fromArray(params.alignmentMatrix);
   alignedMoveOut.updateMatrixWorld(true);
 
+  let changeSpots: ChangeSpot[] = [];
+  if (!params.customViewpoints) {
+    try {
+      changeSpots = findChangeSpots(moveInRoot, alignedMoveOut);
+    } catch (err) {
+      console.warn("Change spotting skipped:", err);
+    }
+  }
   const viewpoints =
-    params.customViewpoints ?? buildDefaultViewpoints(moveInRoot, params.moveInPins);
+    params.customViewpoints ??
+    buildDefaultViewpoints(moveInRoot, params.moveInPins, changeSpots);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setSize(WIDTH, HEIGHT, false);

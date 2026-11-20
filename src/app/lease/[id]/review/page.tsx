@@ -244,17 +244,17 @@ export default function LeaseReviewPage({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {error && <p className="text-xs text-claim">{error}</p>}
+                {error && <p className="text-sm text-claim">{error}</p>}
 
                 {!allCoSigned ? (
                   isLandlord ? (
                     <Button
                       size="lg"
-                      className="w-full"
+                      className="w-full h-auto min-h-12 whitespace-normal py-3 leading-snug"
                       disabled={busy !== null || unacknowledgedIds.length === 0}
                       onClick={handleCoSignAll}
                     >
-                      <CheckCircle2 className="h-4 w-4" />
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
                       {busy ??
                         `Co-sign move-in record (${unacknowledgedIds.length} item${unacknowledgedIds.length === 1 ? "" : "s"})`}
                     </Button>
@@ -284,7 +284,7 @@ export default function LeaseReviewPage({
                         key={p.recordId}
                         className="rounded-xl border border-border bg-muted/35 p-3 space-y-2 text-xs"
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={() =>
@@ -294,7 +294,7 @@ export default function LeaseReviewPage({
                                 nonce: Date.now(),
                               })
                             }
-                            className="font-medium text-foreground text-left hover:text-accent cursor-pointer"
+                            className="min-h-11 text-sm font-medium text-foreground text-left hover:text-accent cursor-pointer"
                           >
                             {p.manifest.text}
                           </button>
@@ -316,12 +316,13 @@ export default function LeaseReviewPage({
                                   value={contestNote}
                                   onChange={(e) => setContestNote(e.target.value)}
                                   placeholder="Counter-note for this spot"
-                                  className="w-full h-9 rounded-md border border-border bg-background px-2.5 text-xs"
+                                  className="w-full h-11 rounded-md border border-border bg-background px-3 text-base sm:h-9 sm:text-sm"
                                 />
                                 <div className="flex gap-2">
                                   <Button
                                     size="sm"
                                     variant="destructive"
+                                    className="max-sm:h-11 max-sm:flex-1 max-sm:text-sm"
                                     disabled={busy !== null || !contestNote.trim()}
                                     onClick={() => handleContestPin(p.recordId)}
                                   >
@@ -330,6 +331,7 @@ export default function LeaseReviewPage({
                                   <Button
                                     size="sm"
                                     variant="ghost"
+                                    className="max-sm:h-11 max-sm:flex-1 max-sm:text-sm"
                                     onClick={() => setContestingId(null)}
                                   >
                                     Cancel
@@ -340,9 +342,9 @@ export default function LeaseReviewPage({
                               <button
                                 type="button"
                                 onClick={() => setContestingId(p.recordId)}
-                                className="inline-flex items-center gap-1 text-claim hover:underline cursor-pointer"
+                                className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-claim hover:underline cursor-pointer"
                               >
-                                <AlertTriangle className="h-3 w-3" />
+                                <AlertTriangle className="h-3.5 w-3.5" />
                                 Contest this pin
                               </button>
                             )}

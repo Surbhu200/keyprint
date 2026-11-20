@@ -274,17 +274,23 @@ function VerifyContent() {
   })();
 
   return (
-    <main className="flex-1 mx-auto w-full max-w-3xl px-5 py-10 space-y-6">
-      <div className="space-y-1.5">
-        <Badge variant="sealed">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Public proof check · No login · File never leaves your device
-        </Badge>
-        <h1 className="text-3xl font-semibold tracking-tight">
+    <main className="flex-1 mx-auto w-full max-w-3xl xl:max-w-5xl px-5 py-6 sm:py-10 space-y-6">
+      <div className="max-w-2xl space-y-3">
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="sealed">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Public proof check
+          </Badge>
+          <Badge>No login</Badge>
+          <Badge>File never leaves your device</Badge>
+        </div>
+        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-balance">
           Don&apos;t trust Keyprint. Verify it.
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Drop any 3D scan or photo here. Your browser hashes the file locally and checks its manifest fingerprint directly against the immutable record on Arc. Change one single byte and it fails.
+        <p className="text-base leading-relaxed text-muted-foreground">
+          Drop any 3D scan or photo. Your browser fingerprints it on this device
+          (SHA-256) and checks that fingerprint against the record sealed on
+          Arc. Change one single byte and it fails.
         </p>
       </div>
 
@@ -296,160 +302,199 @@ function VerifyContent() {
         </div>
       )}
 
-      {/* Drop zone */}
-      <Card>
-        <CardContent className="p-6 space-y-4">
-          <label
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const f = e.dataTransfer.files?.[0];
-              if (f) runVerifyFile(f, f.name);
-            }}
-            className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-muted/35 hover:bg-muted/60 transition-colors p-10 text-center cursor-pointer"
-          >
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-surface border border-border text-accent shadow-xs">
-              <Upload className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="font-semibold text-sm text-foreground">
-                Drop a 3D scan (.glb) or photo to verify
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {selectedFileName
-                  ? `Last checked: ${selectedFileName}`
-                  : "Hashed locally in your browser with SHA-256"}
-              </p>
-            </div>
-            <input
-              type="file"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
+      {/* Drop zone and verdict: side by side from xl, stacked below */}
+      <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+        <Card>
+          <CardContent className="p-4 sm:p-6 space-y-4">
+            <label
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const f = e.dataTransfer.files?.[0];
                 if (f) runVerifyFile(f, f.name);
               }}
-            />
-          </label>
-
-          {hashProgress !== null && (
-            <div className="space-y-1">
-              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full bg-accent transition-all duration-150"
-                  style={{ width: `${hashProgress}%` }}
-                />
+              className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-muted/35 hover:bg-muted/60 transition-colors p-10 text-center cursor-pointer"
+            >
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-surface border border-border text-accent shadow-xs">
+                <Upload className="h-5 w-5" />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Hashing file locally… {hashProgress}%
-              </p>
-            </div>
-          )}
-
-          {/* Quick reference file test buttons */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border text-xs">
-            <span className="text-muted-foreground">
-              Test with reference scans:
-            </span>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={async () => {
-                  const blob = await fetch(REFERENCE_MOVE_IN_URL).then((r) =>
-                    r.blob(),
-                  );
-                  await runVerifyFile(blob, "apartment-move-in.glb");
-                }}
-              >
-                Check original scan
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  const blob = await fetch(REFERENCE_TAMPERED_URL).then((r) =>
-                    r.blob(),
-                  );
-                  await runVerifyFile(blob, "apartment-move-in-tampered.glb");
-                }}
-              >
-                Check 1-byte-changed copy
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {error && (
-        <div className="rounded-xl border border-claim/30 bg-claim/10 px-4 py-3 text-sm text-claim">
-          {error}
-        </div>
-      )}
-
-      {/* Verdict banner */}
-      {result && (
-        <Card
-          className={
-            result.valid
-              ? "border-sealed/40 bg-sealed/5"
-              : "border-claim/40 bg-claim/5"
-          }
-        >
-          <CardContent className="p-6 space-y-3">
-            <div className="flex items-start gap-3">
-              {result.valid ? (
-                <CheckCircle2 className="h-6 w-6 text-sealed shrink-0 mt-0.5" />
-              ) : (
-                <ShieldAlert className="h-6 w-6 text-claim shrink-0 mt-0.5" />
-              )}
-              <div className="space-y-1">
-                <h2
-                  className={`text-lg font-semibold ${
-                    result.valid ? "text-sealed" : "text-claim"
-                  }`}
-                >
-                  {result.valid
-                    ? "Verified — untouched since sealing"
-                    : "No match — file was altered or never sealed"}
-                </h2>
-                <p className="text-sm text-foreground">
-                  {result.valid ? verdictLine : result.reason}
+              <div>
+                <p className="font-semibold text-sm text-foreground">
+                  Drop a 3D scan (.glb) or photo to verify
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedFileName
+                    ? `Last checked: ${selectedFileName}`
+                    : "Hashed locally in your browser with SHA-256"}
                 </p>
               </div>
-            </div>
+              <input
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) runVerifyFile(f, f.name);
+                }}
+              />
+            </label>
 
-            <div className="rounded-xl bg-surface border border-border p-3.5 space-y-1.5 text-xs font-mono">
-              <div className="break-all">
-                <span className="text-muted-foreground font-sans">
-                  File SHA-256:{" "}
-                </span>
-                {result.fileSha256}
+            {hashProgress !== null && (
+              <div className="space-y-1">
+                <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-accent transition-all duration-150"
+                    style={{ width: `${hashProgress}%` }}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground tabular-nums">
+                  Hashing file locally… {hashProgress}%
+                </p>
               </div>
-              {result.recordId && (
-                <div className="break-all">
-                  <span className="text-muted-foreground font-sans">
-                    Sealed Record ID:{" "}
-                  </span>
-                  {result.recordId}
-                </div>
-              )}
-              {txMeta?.txHash && (
-                <div>
-                  <a
-                    href={explorerTxUrl(txMeta.txHash)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 font-sans font-medium text-accent hover:underline"
-                  >
-                    Inspect sealed proof on Arc Testnet Explorer
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              )}
+            )}
+
+            {/* Quick reference file test buttons */}
+            <div className="space-y-3 border-t border-border pt-4">
+              <p className="text-sm font-semibold text-foreground">
+                No file handy? Test with the sample apartment
+              </p>
+              <p className="text-sm text-muted-foreground">
+                The original should turn green. The copy with one byte changed
+                should turn red. Each check downloads a 16 MB file first.
+              </p>
+              <div className="grid gap-2.5">
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={async () => {
+                    const blob = await fetch(REFERENCE_MOVE_IN_URL).then((r) =>
+                      r.blob(),
+                    );
+                    await runVerifyFile(blob, "apartment-move-in.glb");
+                  }}
+                >
+                  <ShieldCheck className="h-4 w-4 text-sealed" />
+                  Check original scan
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={async () => {
+                    const blob = await fetch(REFERENCE_TAMPERED_URL).then((r) =>
+                      r.blob(),
+                    );
+                    await runVerifyFile(blob, "apartment-move-in-tampered.glb");
+                  }}
+                >
+                  <ShieldAlert className="h-4 w-4 text-claim" />
+                  Check 1-byte-changed copy
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
-      )}
+
+        <div className="space-y-4" aria-live="polite">
+          {error && (
+            <div className="rounded-xl border border-claim/30 bg-claim/10 px-4 py-3 text-sm text-claim">
+              {error}
+            </div>
+          )}
+
+          {/* Verdict banner */}
+          {result && (
+            <Card
+              className={
+                result.valid
+                  ? "border-2 border-sealed/50 bg-sealed/5 motion-safe:animate-rise"
+                  : "border-2 border-claim/50 bg-claim/5 motion-safe:animate-rise"
+              }
+            >
+              <CardContent className="p-5 sm:p-6 space-y-4">
+                <div className="flex items-start gap-4">
+                  {result.valid ? (
+                    <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white bg-sealed">
+                      <CheckCircle2 className="h-6 w-6" />
+                    </span>
+                  ) : (
+                    <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white bg-claim">
+                      <ShieldAlert className="h-6 w-6" />
+                    </span>
+                  )}
+                  <div className="space-y-1">
+                    <h2
+                      className={`text-xl sm:text-2xl font-semibold tracking-tight ${
+                        result.valid ? "text-sealed" : "text-claim"
+                      }`}
+                    >
+                      {result.valid
+                        ? "Verified — untouched since sealing"
+                        : "No match — file was altered or never sealed"}
+                    </h2>
+                    <p className="text-sm sm:text-base text-foreground">
+                      {result.valid ? verdictLine : result.reason}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-border bg-surface p-4">
+                  <dl className="space-y-3 text-xs">
+                    <div className="space-y-1">
+                      <dt className="font-semibold uppercase tracking-wider text-muted-foreground">
+                        File fingerprint (SHA-256)
+                      </dt>
+                      <dd className="break-all font-mono text-foreground">
+                        {result.fileSha256}
+                      </dd>
+                    </div>
+                    {result.recordId && (
+                      <div className="space-y-1">
+                        <dt className="font-semibold uppercase tracking-wider text-muted-foreground">
+                          Sealed record ID
+                        </dt>
+                        <dd className="break-all font-mono text-foreground">
+                          {result.recordId}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  {txMeta?.txHash && (
+                    <a
+                      href={explorerTxUrl(txMeta.txHash)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-accent hover:underline"
+                    >
+                      Inspect sealed proof on Arc Testnet Explorer
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Desktop-only empty state, so the verdict lands beside the drop zone */}
+          {!result && !error && (
+            <div className="hidden xl:flex min-h-[300px] flex-col justify-center gap-4 rounded-2xl border-2 border-dashed border-border bg-surface/60 p-8">
+              <p className="text-sm font-semibold text-foreground">
+                Your result appears here
+              </p>
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sealed/10 text-sealed">
+                  <CheckCircle2 className="h-4 w-4" />
+                </span>
+                Green: the file matches its sealed record, byte for byte
+              </div>
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-claim/10 text-claim">
+                  <ShieldAlert className="h-4 w-4" />
+                </span>
+                Red: it was changed, even by one byte, or never sealed
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Optional zero-trust offline manifest inputs */}
       <Card>

@@ -191,36 +191,36 @@ export default function LeaseRoomPage({
 
         <div className="space-y-4">
           {pendingTap && (
-            <Card className="border-accent/40">
-              <CardHeader className="pb-3">
+            <Card className="border-accent/40 transition-[translate,opacity] duration-200 ease-out motion-reduce:transition-none max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-40 max-lg:mb-0 max-lg:max-h-[80svh] max-lg:overflow-y-auto max-lg:rounded-b-none max-lg:border-x-0 max-lg:border-b-0 max-lg:pb-[env(safe-area-inset-bottom)] max-lg:shadow-[0_-12px_32px_rgba(22,22,22,0.16)] max-lg:starting:translate-y-6 max-lg:starting:opacity-0">
+              <div
+                aria-hidden="true"
+                className="mx-auto mt-2 h-1 w-10 rounded-full bg-border lg:hidden"
+              />
+              <CardHeader className="pb-3 max-lg:px-4 max-lg:pt-2 max-lg:pb-2">
                 <CardTitle className="text-base flex items-center gap-1.5">
                   <MapPin className="h-4 w-4 text-accent" />
                   Seal a new pin
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-3 max-lg:px-4 max-lg:pb-4">
                 <input
                   type="text"
                   value={pinText}
                   onChange={(e) => setPinText(e.target.value)}
                   placeholder="e.g. Leak under sink, reported"
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                  aria-label="Describe this spot"
+                  className="w-full h-11 rounded-lg border border-border bg-background px-3 text-base sm:text-sm"
                 />
-                {error && <p className="text-xs text-claim">{error}</p>}
+                {error && <p className="text-sm text-claim">{error}</p>}
                 <div className="flex gap-2">
                   <Button
-                    size="sm"
                     disabled={busy || !pinText.trim()}
                     onClick={handleSealPin}
                     className="flex-1"
                   >
                     {busy ? "Sealing…" : "Seal pin"}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setPendingTap(null)}
-                  >
+                  <Button variant="ghost" onClick={() => setPendingTap(null)}>
                     Cancel
                   </Button>
                 </div>
@@ -238,7 +238,7 @@ export default function LeaseRoomPage({
               {sealedPins.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   {isParty
-                    ? "No pins yet. Tap anything that's already damaged."
+                    ? "No pins yet. Tap any spot in the room to leave a timestamped note, like a leak you reported."
                     : "No pins sealed yet."}
                 </p>
               ) : (

@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, LogOut, ShieldCheck, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  LogOut,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import {
   ARC_USDC_ADDRESS,
   explorerAddressUrl,
@@ -68,76 +76,124 @@ export function DetailsDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/35 backdrop-blur-[1px]">
-      <div className="w-full max-w-md bg-surface h-full shadow-2xl border-l border-border flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <div className="flex items-center gap-2 font-semibold">
-            <ShieldCheck className="h-4 w-4 text-accent" />
-            <span>Verification &amp; Account Details</span>
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-[2px] transition-colors duration-300 starting:bg-black/0 motion-reduce:transition-none">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Account and proof details"
+        className="flex h-full w-full flex-col bg-surface shadow-2xl translate-y-0 transition-[translate] duration-300 ease-out starting:translate-y-full motion-reduce:transition-none sm:max-w-md sm:border-l sm:border-border sm:starting:translate-x-full sm:starting:translate-y-0"
+      >
+        <div className="shrink-0 border-b border-border pt-[env(safe-area-inset-top)]">
+          <div className="flex h-14 items-center justify-between gap-3 pl-5 pr-2 sm:pl-6">
+            <h2 className="flex min-w-0 items-center gap-2 text-base font-semibold">
+              <ShieldCheck className="h-4 w-4 shrink-0 text-accent" />
+              <span className="truncate">Account &amp; proof details</span>
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              autoFocus
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-border/60 [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 cursor-pointer"
+              aria-label="Close details"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 hover:bg-muted text-muted-foreground cursor-pointer"
-            aria-label="Close details"
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
+        <div className="flex-1 space-y-6 overflow-y-auto overscroll-contain px-5 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-sm sm:px-6">
+          {receipts.length > 0 && (
+            <section className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Sealed receipts
+              </h3>
+              <div className="overflow-hidden rounded-2xl border border-border divide-y divide-border">
+                {receipts.map((r) => (
+                  <a
+                    key={r.txHash}
+                    href={explorerTxUrl(r.txHash)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={r.txHash}
+                    className="flex min-h-14 items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted active:bg-muted [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-foreground">
+                        {r.label}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        <span className="font-mono">
+                          {r.txHash.slice(0, 10)}…{r.txHash.slice(-8)}
+                        </span>
+                        {r.gasFeeLabel && <> · Fee {r.gasFeeLabel} (sponsored)</>}
+                      </span>
+                    </span>
+                    <ExternalLink className="h-4 w-4 shrink-0 text-accent" />
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+
           {session ? (
             <section className="space-y-3">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Signed-in Passkey Account
+                Your account
               </h3>
-              <div className="rounded-xl border border-border bg-muted/50 p-4 space-y-2.5">
-                <div className="flex items-center justify-between">
+              <div className="divide-y divide-border/70 rounded-2xl border border-border bg-muted/40">
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
                   <span className="text-muted-foreground">Name</span>
-                  <span className="font-medium">{session.username}</span>
+                  <span className="min-w-0 truncate font-medium">{session.username}</span>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
                   <span className="text-muted-foreground">Available balance</span>
-                  <span className="font-semibold">
+                  <span className="font-semibold tabular-nums">
                     {balance !== null ? formatDollars(balance) : "Loading…"}
                   </span>
                 </div>
-                <div className="pt-1 border-t border-border/70">
-                  <div className="text-xs text-muted-foreground mb-1">
-                    Arc Smart Account Address
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <code className="text-xs break-all font-mono text-foreground">
-                      {session.address}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => copyValue("account", session.address)}
-                      className="shrink-0 p-1.5 rounded-md hover:bg-surface border border-border cursor-pointer"
-                      title="Copy address"
-                    >
-                      {copied === "account" ? (
-                        <Check className="h-3.5 w-3.5 text-sealed" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
+                <div className="space-y-3 px-4 py-4">
+                  <div className="font-medium text-foreground">Account ID</div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Share this so you can be added to a lease.
+                  </p>
+                  <code className="block break-all rounded-xl border border-border bg-surface px-3 py-2.5 font-mono text-[13px] leading-relaxed text-foreground">
+                    {session.address}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => copyValue("account", session.address)}
+                  >
+                    {copied === "account" ? (
+                      <>
+                        <Check className="h-4 w-4 text-sealed" />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        Copy account ID
+                      </>
+                    )}
+                  </Button>
+                  <span className="sr-only" aria-live="polite">
+                    {copied === "account" ? "Account ID copied" : ""}
+                  </span>
                   <a
                     href={explorerAddressUrl(session.address)}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-md text-xs font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                   >
                     View on Arc Testnet Explorer
-                    <ExternalLink className="h-3 w-3" />
+                    <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 </div>
               </div>
 
               <Button
                 variant="outline"
-                size="sm"
                 className="w-full"
                 onClick={() => {
                   clearSession();
@@ -145,76 +201,49 @@ export function DetailsDrawer({
                   onClose();
                 }}
               >
-                <LogOut className="h-3.5 w-3.5" />
+                <LogOut className="h-4 w-4" />
                 Sign out of this browser profile
               </Button>
             </section>
           ) : (
-            <p className="text-muted-foreground">
+            <p className="rounded-2xl border border-border bg-muted/40 px-4 py-3 leading-relaxed text-muted-foreground">
               Not signed in yet. Sign in with your passkey to view your account details.
             </p>
           )}
 
-          <section className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Arc Testnet Contracts (Chain ID 5042002)
-            </h3>
-            <div className="rounded-xl border border-border divide-y divide-border text-xs">
+          <details className="group overflow-hidden rounded-2xl border border-border">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-medium hover:bg-muted [-webkit-tap-highlight-color:transparent] [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60">
+              Contracts on Arc Testnet
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none" />
+            </summary>
+            <div className="divide-y divide-border border-t border-border text-xs">
               {[
                 { label: "USDC (ERC-20, 6 decimals)", addr: ARC_USDC_ADDRESS },
                 { label: "KeyprintRegistry", addr: registry },
                 { label: "KeyprintEscrow", addr: escrow },
               ].map((item) => (
-                <div key={item.label} className="p-3 space-y-1">
+                <div key={item.label} className="space-y-1 px-4 py-3">
                   <div className="font-medium text-foreground">{item.label}</div>
                   {item.addr ? (
                     <a
                       href={explorerAddressUrl(item.addr)}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-accent hover:underline break-all"
+                      className="inline-flex min-h-11 items-center gap-1 font-mono text-accent hover:underline break-all"
                     >
                       {item.addr}
                       <ExternalLink className="h-3 w-3 shrink-0" />
                     </a>
                   ) : (
-                    <span className="text-muted-foreground">Not configured in .env.local</span>
+                    <span className="text-muted-foreground">
+                      Not connected on this deployment
+                    </span>
                   )}
                 </div>
               ))}
+              <p className="px-4 py-3 text-muted-foreground">Chain ID 5042002</p>
             </div>
-          </section>
-
-          {receipts.length > 0 && (
-            <section className="space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Sealed Receipts
-              </h3>
-              <div className="rounded-xl border border-border divide-y divide-border text-xs">
-                {receipts.map((r) => (
-                  <div key={r.txHash} className="p-3 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{r.label}</span>
-                      {r.gasFeeLabel && (
-                        <span className="text-muted-foreground">
-                          Fee: {r.gasFeeLabel} (sponsored)
-                        </span>
-                      )}
-                    </div>
-                    <a
-                      href={explorerTxUrl(r.txHash)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-accent hover:underline break-all"
-                    >
-                      {r.txHash}
-                      <ExternalLink className="h-3 w-3 shrink-0" />
-                    </a>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          </details>
         </div>
       </div>
     </div>

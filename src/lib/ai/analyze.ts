@@ -3,7 +3,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { ProjectedPin2D } from "./matching";
 
-export const AI_PROMPT_VERSION = "keyprint-diff-v2";
+export const AI_PROMPT_VERSION = "keyprint-diff-v3";
 
 export const ChangeSchema = z.object({
   view_id: z.string(),
@@ -51,11 +51,12 @@ interface LabeledPair {
 const SYSTEM_PROMPT = `You are inspecting two 1024x768 3D room renders taken from the exact same camera viewpoint: BEFORE (move-in) and AFTER (move-out).
 
 List physical changes to the apartment unit between BEFORE and AFTER.
-Ignore lighting shifts, exposure, color balance, scan noise, holes or stretched textures from 3D reconstruction, and personal belongings that moved.
+Report anything new on or attached to walls, floors, doors, counters or fixtures: stains, marks, scuffs, holes, scratches, burns, tape, stickers, notes or paint.
+Ignore lighting shifts, exposure, color balance, scan noise, holes or stretched textures from 3D reconstruction, missing scan coverage at the image edges, and free-standing belongings (furniture, bags, boxes) that moved.
 
 Label each item strictly as one of:
 - possible_damage: holes, burns, large stains, broken fixtures, deep gouges
-- possible_wear: light scuffs, faded paint, carpet wear in walkways, small nail holes
+- possible_wear: light scuffs, faded paint, carpet wear in walkways, small nail holes, marks or items stuck on a surface
 - not_a_real_change: likely a scan artifact or shadow
 
 Important rules:
@@ -103,12 +104,14 @@ const GEMINI_RESPONSE_SCHEMA = {
   required: ["changes"],
 };
 
-// Measured Nov 19 with this project's key: 3.5-flash answered one pair in ~5 s and found both
-// planted changes; 3.8-flash timed out at 55 s on the same pair, so it's the last resort.
+// Measured Nov 19-20 with this project's key: 3.5-flash is the most accurate (found both planted
+// changes) but is sometimes overloaded (503 / very slow), so it gets a short wait; 3.8-flash is
+// Google's suggested successor; 3.5-flash-lite answers a 3-pair batch in ~8 s even under load.
+// (gemini-2.5-flash is no longer offered to new keys.)
 const GEMINI_MODEL_FALLBACKS = [
   "gemini-3.5-flash",
-  "gemini-3.5-flash-lite",
   "gemini-3.8-flash",
+  "gemini-3.5-flash-lite",
 ] as const;
 
 async function analyzeWithClaude(
@@ -153,7 +156,7 @@ async function analyzeWithClaude(
         messages: [{ role: "user", content }],
       },
       // Leaves room for the Gemini fallback inside the route's 300 s limit.
-      { timeout: 110_000, maxRetries: 0 },
+      { timeout: 80_000, maxRetries: 0 },
     );
 
     if (response.stop_reason === "refusal" || !response.parsed_output) {
@@ -166,7 +169,65 @@ async function analyzeWithClaude(
   }
 }
 
-async function analyzeWithGemini(
+/** One request to one Gemini model; null on any failure (HTTP error, timeout, bad JSON). */
+async function geminiCall(
+  model: string,
+  parts: unknown[],
+  apiKey: string,
+  timeoutMs: number,
+): Promise<AnalyzeResult | null> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: "application/json",
+            responseSchema: GEMINI_RESPONSE_SCHEMA,
+          },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.warn(`Gemini ${model} failed (${res.status}):`, errBody.slice(0, 200));
+      return null;
+    }
+    const data = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawText) return null;
+    const parsed = ChangeReportSchema.safeParse(JSON.parse(rawText));
+    if (parsed.success) return { report: parsed.data, model };
+    console.warn(`Gemini ${model} schema validation mismatch:`, parsed.error.message);
+    return null;
+  } catch (err) {
+    console.warn(`Gemini ${model} request error:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+const [BEST_MODEL, BACKUP_MODEL, FAST_MODEL] = GEMINI_MODEL_FALLBACKS;
+/** After the fast model answers, how long to keep waiting for the more accurate one. */
+const BEST_MODEL_GRACE_MS = 10_000;
+
+/**
+ * One batch of view pairs. The most accurate model and the fast model are asked at the same
+ * time: the accurate answer wins if it arrives (or within a short grace period after the fast
+ * one); otherwise the fast answer is used, so an overloaded model can't stall the comparison.
+ * If both fail, the backup model gets one try.
+ */
+async function geminiBatch(
   pairs: LabeledPair[],
   apiKey: string,
 ): Promise<AnalyzeResult | null> {
@@ -189,54 +250,61 @@ async function analyzeWithGemini(
     },
   ]);
 
-  for (const model of GEMINI_MODEL_FALLBACKS) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          signal: AbortSignal.timeout(55_000),
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey,
-          },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-            contents: [{ role: "user", parts }],
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: "application/json",
-              responseSchema: GEMINI_RESPONSE_SCHEMA,
-            },
-          }),
-        },
-      );
+  // Worst case per batch: 45 s (both in parallel) + 35 s backup; batches also run in parallel.
+  const best = geminiCall(BEST_MODEL, parts, apiKey, 45_000);
+  const fast = geminiCall(FAST_MODEL, parts, apiKey, 30_000);
 
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => "");
-        console.warn(`Gemini ${model} failed (${res.status}):`, errBody.slice(0, 200));
-        continue;
-      }
+  const winner = await new Promise<AnalyzeResult | null>((resolve) => {
+    let bestDone = false;
+    let fastResult: AnalyzeResult | null = null;
+    let fastDone = false;
+    let graceTimer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (r: AnalyzeResult | null) => {
+      if (graceTimer) clearTimeout(graceTimer);
+      resolve(r);
+    };
+    void best.then((r) => {
+      bestDone = true;
+      if (r) return finish(r);
+      if (fastDone) finish(fastResult);
+    });
+    void fast.then((r) => {
+      fastDone = true;
+      fastResult = r;
+      if (bestDone) return finish(r);
+      if (r) graceTimer = setTimeout(() => finish(r), BEST_MODEL_GRACE_MS);
+    });
+  });
+  if (winner) return winner;
+  return geminiCall(BACKUP_MODEL, parts, apiKey, 35_000);
+}
 
-      const data = (await res.json()) as {
-        candidates?: Array<{
-          content?: { parts?: Array<{ text?: string }> };
-        }>;
-      };
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) continue;
+const GEMINI_BATCH_SIZE = 3;
 
-      const parsed = ChangeReportSchema.safeParse(JSON.parse(rawText));
-      if (parsed.success) {
-        return { report: parsed.data, model };
-      }
-      console.warn(`Gemini ${model} schema validation mismatch:`, parsed.error.message);
-    } catch (err) {
-      console.warn(`Gemini ${model} request error:`, err);
-    }
+/**
+ * Sends the views in small batches at the same time: one request with 8+ image pairs can take
+ * well over a minute (or time out), while 3-pair requests in parallel return in about the time
+ * of one. A failed batch only loses its own views; results are merged.
+ */
+async function analyzeWithGemini(
+  pairs: LabeledPair[],
+  apiKey: string,
+): Promise<AnalyzeResult | null> {
+  const batches: LabeledPair[][] = [];
+  for (let i = 0; i < pairs.length; i += GEMINI_BATCH_SIZE) {
+    batches.push(pairs.slice(i, i + GEMINI_BATCH_SIZE));
   }
-
-  return null;
+  const results = await Promise.all(batches.map((batch) => geminiBatch(batch, apiKey)));
+  const ok = results.filter((r): r is AnalyzeResult => r !== null);
+  if (ok.length === 0) return null;
+  if (ok.length < results.length) {
+    console.warn(`Gemini: ${results.length - ok.length} of ${results.length} view batches failed.`);
+  }
+  const models = [...new Set(ok.map((r) => r.model))];
+  return {
+    report: { changes: ok.flatMap((r) => r.report.changes) },
+    model: models.join("+"),
+  };
 }
 
 /**

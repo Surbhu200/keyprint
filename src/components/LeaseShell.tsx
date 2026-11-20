@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
@@ -18,15 +19,40 @@ interface LeaseShellProps {
 
 export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
   const pathname = usePathname();
+
+  // Any open lease screen asks Keyprint's keeper to settle once the claim deadline has passed
+  // (anyone may settle; the keeper re-checks every contract rule before sending anything).
+  const { lease, chainNowSec, refresh } = live;
+  const keeperBusy = useRef(false);
+  const lastKeeperCall = useRef(0);
+  useEffect(() => {
+    if (!lease || lease.state !== 2) return;
+    const deadlinePassed = lease.claimsClosed || chainNowSec > lease.endedAt + lease.claimWindow;
+    if (!deadlinePassed || keeperBusy.current) return;
+    const now = Date.now();
+    if (now - lastKeeperCall.current < 15_000) return;
+    keeperBusy.current = true;
+    lastKeeperCall.current = now;
+    fetch("/api/keeper/settle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leaseId }),
+    })
+      .then(() => refresh())
+      .catch(() => undefined)
+      .finally(() => {
+        keeperBusy.current = false;
+      });
+  }, [lease, chainNowSec, leaseId, refresh]);
   const base = `/lease/${leaseId}`;
 
   const tabs = [
-    { href: `${base}/capture`, label: "1. Move in" },
-    { href: `${base}/room`, label: "2. Room & pins" },
-    { href: `${base}/review`, label: "3. Landlord review" },
-    { href: `${base}/compare`, label: "4. Move-out compare" },
-    { href: `${base}/claims`, label: "5. Claims" },
-    { href: `${base}/settle`, label: "6. Settle" },
+    { href: `${base}/capture`, label: "1. Move in", short: "Move in" },
+    { href: `${base}/room`, label: "2. Room & pins", short: "Room" },
+    { href: `${base}/review`, label: "3. Landlord review", short: "Review" },
+    { href: `${base}/compare`, label: "4. Move-out compare", short: "Compare" },
+    { href: `${base}/claims`, label: "5. Claims", short: "Claims" },
+    { href: `${base}/settle`, label: "6. Settle", short: "Settle" },
   ];
 
   const receipts: ReceiptLink[] = [];
@@ -76,43 +102,71 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
       <AppNav receipts={receipts} />
 
       <div className="border-b border-border bg-surface">
-        <div className="mx-auto max-w-6xl px-5 py-4 flex flex-col gap-3">
+        <div className="mx-auto max-w-6xl px-5 py-3 sm:py-4 flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-xl font-semibold tracking-tight">
+              <h1 className="text-xl font-semibold tracking-tight break-words">
                 {live.meta?.unit_name || "Apartment Lease"}
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Live record · updates automatically every few seconds
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent motion-safe:animate-pulse"
+                />
+                Live record
+                <span className="hidden sm:inline"> · updates automatically every few seconds</span>
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {depositBadge && (
-                <Badge variant={live.lease?.state === 0 ? "default" : "sealed"}>
+                <Badge
+                  variant={live.lease?.state === 0 ? "default" : "sealed"}
+                  className="whitespace-nowrap"
+                >
                   <ShieldCheck className="h-3.5 w-3.5" />
                   {depositBadge}
                 </Badge>
               )}
-              <Badge variant="default">{stateName}</Badge>
+              <Badge variant="default" className="whitespace-nowrap">
+                {stateName}
+              </Badge>
             </div>
           </div>
 
-          <nav className="flex items-center gap-1 overflow-x-auto pb-0.5">
-            {tabs.map((tab) => (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors",
-                  pathname === tab.href
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                )}
-              >
-                {tab.label}
-              </Link>
-            ))}
+          <nav
+            aria-label="Lease steps"
+            className="grid grid-cols-6 gap-1 sm:flex sm:items-center sm:gap-1 sm:overflow-x-auto sm:pb-0.5"
+          >
+            {tabs.map((tab, i) => {
+              const active = pathname === tab.href;
+              return (
+                <Link
+                  key={tab.href}
+                  href={tab.href}
+                  aria-current={active ? "page" : undefined}
+                  aria-label={tab.label}
+                  className={cn(
+                    "flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1 text-[11px] font-medium leading-tight transition-colors sm:min-h-0 sm:flex-row sm:whitespace-nowrap sm:px-3 sm:py-1.5 sm:text-xs",
+                    active
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums sm:hidden",
+                      active ? "bg-accent-foreground/20" : "bg-muted text-foreground",
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="sm:hidden">{tab.short}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </Link>
+              );
+            })}
           </nav>
         </div>
       </div>

@@ -146,7 +146,7 @@ export function computeSurfaceAgreement(
 
   const medianCm = (medianGapMeters * 100).toFixed(1);
   const pct5cm = Math.round(shareWithin5cm * 100);
-  const summaryText = `Half the room lines up within ${medianCm} cm; ${pct5cm}% within 5 cm`;
+  const summaryText = `Median surface gap ${medianCm} cm; ${pct5cm}% of the scan within 5 cm`;
 
   return {
     sampledCount,

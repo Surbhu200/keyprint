@@ -1,7 +1,9 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import Link from "next/link";
 import { encodeFunctionData, formatUnits } from "viem";
+import { MotionConfig, motion } from "framer-motion";
 import {
   CheckCircle2,
   Download,
@@ -13,7 +15,7 @@ import { LeaseShell } from "@/components/LeaseShell";
 import { useLeaseLiveState } from "@/components/useLeaseLiveState";
 import { usePasskeySession } from "@/components/usePasskeySession";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -30,6 +32,7 @@ import {
   KEYPRINT_ESCROW_ABI,
 } from "@/lib/chain/arc";
 import { friendlyError, sendSponsoredCalls } from "@/lib/chain/wallet";
+import { cn } from "@/lib/utils";
 
 const RECORD_KIND_NAMES = [
   "MoveInScan",
@@ -235,12 +238,30 @@ export default function LeaseSettlePage({
                   ? "Accept, dispute, or wait out the deadlines on the Claims tab."
                   : "Once the move-out scan is sealed, the landlord gets a claim window. No claims means the full deposit goes back."}
             </CardDescription>
+            {!isSettled && live.lease && (
+              <Link
+                href={
+                  leaseState === 2
+                    ? `/lease/${leaseId}/claims`
+                    : leaseState === 1
+                      ? `/lease/${leaseId}/compare`
+                      : `/lease/${leaseId}/capture`
+                }
+                className={cn(buttonVariants(), "mt-3 w-full sm:w-auto sm:self-start")}
+              >
+                {leaseState === 2
+                  ? "Go to claims"
+                  : leaseState === 1
+                    ? "Go to move-out compare"
+                    : "Go to move-in"}
+              </Link>
+            )}
           </CardHeader>
 
           {isSettled && live.lease && (
             <CardContent className="space-y-6">
               <div className="grid sm:grid-cols-2 gap-4">
-                <div className="rounded-2xl border border-sealed/30 bg-sealed/5 p-6">
+                <div className="rounded-2xl border border-sealed/30 bg-sealed/5 p-5 sm:p-6">
                   <div className="text-xs font-semibold uppercase tracking-wider text-sealed">
                     Returned to renter
                   </div>
@@ -249,7 +270,7 @@ export default function LeaseSettlePage({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-border bg-muted/40 p-6">
+                <div className="rounded-2xl border border-border bg-muted/40 p-5 sm:p-6">
                   <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Paid to landlord (accepted or awarded claims)
                   </div>
@@ -258,6 +279,25 @@ export default function LeaseSettlePage({
                   </div>
                 </div>
               </div>
+
+              {/* Plain-language outcome, landing as the count-up finishes. */}
+              <MotionConfig reducedMotion="user">
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.9, duration: 0.35 }}
+                  className="flex items-start gap-3 rounded-2xl border border-sealed/25 bg-sealed/5 p-4"
+                >
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-sealed" />
+                  <p className="text-sm font-medium text-foreground">
+                    {live.lease.landlordPayout === 0n
+                      ? session?.address.toLowerCase() === live.lease.renter.toLowerCase()
+                        ? `Nothing was deducted: all ${formatDollars(live.lease.renterPayout)} came back to you.`
+                        : `Nothing was deducted: all ${formatDollars(live.lease.renterPayout)} went back to the renter.`
+                      : `${formatDollars(live.lease.landlordPayout)} went to the landlord for accepted or awarded claims; ${formatDollars(live.lease.renterPayout)} went back to the renter.`}
+                  </p>
+                </motion.div>
+              </MotionConfig>
 
               {owedAmount > 0n && (
                 <div className="rounded-xl border border-suggestion/30 bg-suggestion/10 p-4 flex flex-wrap items-center justify-between gap-3">
@@ -329,9 +369,10 @@ export default function LeaseSettlePage({
                       href={explorerTxUrl(r.txHash)}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-accent hover:underline"
+                      aria-label={`${r.label}: view on the Arc explorer`}
+                      className="inline-flex min-h-11 items-center gap-1 font-medium text-accent hover:underline sm:min-h-0"
                     >
-                      {r.txHash.slice(0, 14)}…{r.txHash.slice(-8)}
+                      View on Arc
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>

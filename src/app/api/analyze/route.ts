@@ -15,7 +15,7 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase/server";
 
-// Seconds. Model calls stop well inside this: Claude at 110 s, Gemini at 55 s per model.
+// Seconds. Worst case stays inside this: Claude 80 s, then parallel Gemini batches (45 s race + 35 s backup).
 export const maxDuration = 300;
 const MAX_RENDER_BYTES = 3 * 1024 * 1024; // renders are ~100-300 KB JPEGs
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";

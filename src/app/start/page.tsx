@@ -133,7 +133,7 @@ export default function StartPage() {
     <div className="min-h-screen flex flex-col">
       <AppNav />
 
-      <main className="flex-1 flex items-center justify-center px-5 py-12">
+      <main className="flex-1 flex items-center justify-center px-5 py-8 sm:py-12">
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-2">
             <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent">
@@ -179,21 +179,22 @@ export default function StartPage() {
                     id="name"
                     type="text"
                     autoComplete="name"
+                    autoCapitalize="words"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Alex Rivera"
-                    className="w-full h-11 rounded-lg border border-border bg-background px-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                    className="w-full h-12 sm:h-11 rounded-lg border border-border bg-background px-3.5 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                   />
                 </div>
 
                 {error && (
                   <div
                     role="alert"
-                    className="rounded-xl border border-claim/30 bg-claim/10 px-3.5 py-2.5 text-xs text-claim space-y-1"
+                    className="rounded-xl border border-claim/30 bg-claim/10 px-3.5 py-2.5 text-sm leading-snug text-claim space-y-1"
                   >
                     <p>{error.message}</p>
                     {error.detail && error.detail !== error.message && (
-                      <p className="text-[11px] opacity-80 break-words">Details: {error.detail}</p>
+                      <p className="text-xs opacity-80 break-words">Details: {error.detail}</p>
                     )}
                   </div>
                 )}
@@ -201,10 +202,10 @@ export default function StartPage() {
                 <Button
                   type="submit"
                   size="lg"
-                  className="w-full"
+                  className="w-full h-auto min-h-12 whitespace-normal py-3 text-center leading-snug"
                   disabled={busy !== null}
                 >
-                  <Fingerprint className="h-4 w-4" />
+                  <Fingerprint className="h-4 w-4 shrink-0" />
                   {busy === "register"
                     ? STEP_LABEL[step ?? "preparing"]
                     : "Create account with one touch"}
@@ -213,7 +214,7 @@ export default function StartPage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  className="w-full"
+                  className="w-full h-auto min-h-11 whitespace-normal py-2.5 text-center leading-snug"
                   disabled={busy !== null}
                   onClick={handleReturning}
                 >
@@ -222,10 +223,13 @@ export default function StartPage() {
               </form>
             )}
 
-            <div className="rounded-xl bg-muted/60 p-3.5 flex items-start gap-2.5 text-xs text-muted-foreground">
+            <div className="rounded-xl bg-muted/60 p-3.5 flex items-start gap-2.5 text-sm text-muted-foreground">
               <ShieldCheck className="h-4 w-4 text-sealed shrink-0 mt-0.5" />
               <span>
-                Your passkey stays on your device. Use a second browser profile if you want to test both renter and landlord side by side.
+                Your passkey stays on your device; Keyprint never holds it.
+                <span className="mt-1 block text-xs">
+                  Testing both sides? Open the landlord in a second browser profile.
+                </span>
               </span>
             </div>
           </CardContent>

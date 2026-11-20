@@ -757,20 +757,24 @@ export default function LeaseClaimsPage({
                         value={claimTitle}
                         onChange={(e) => setClaimTitle(e.target.value)}
                         placeholder="Describe damage at this spot"
-                        className="w-full h-9 rounded-md border border-border bg-surface px-2.5 text-sm"
+                        className="w-full h-11 sm:h-9 rounded-md border border-border bg-surface px-2.5 text-base sm:text-sm"
                       />
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold">$</span>
                         <input
                           type="number"
+                          inputMode="numeric"
                           min="1"
                           step="1"
                           value={claimDollars}
                           onChange={(e) => setClaimDollars(e.target.value)}
                           placeholder="40"
-                          className="w-28 h-9 rounded-md border border-border bg-surface px-2.5 text-sm"
+                          className="w-28 h-11 sm:h-9 rounded-md border border-border bg-surface px-2.5 text-base sm:text-sm"
                         />
-                        <Button size="sm" onClick={handleStageClaim} className="flex-1">
+                        <Button
+                          onClick={handleStageClaim}
+                          className="flex-1 sm:h-9 sm:px-3.5 sm:text-xs"
+                        >
                           <Plus className="h-3.5 w-3.5" />
                           Stage pin
                         </Button>
@@ -802,7 +806,7 @@ export default function LeaseClaimsPage({
 
                   <Button
                     variant="destructive"
-                    className="w-full"
+                    className="w-full h-auto min-h-11 whitespace-normal py-2.5 leading-snug"
                     disabled={draftClaims.length === 0 || busy !== null}
                     onClick={handleFileClaimsAndClose}
                   >
@@ -943,24 +947,45 @@ export default function LeaseClaimsPage({
                           {isRenter &&
                             live.lease?.state === 2 &&
                             claim.state === 0 && (
-                              <div className="flex flex-wrap gap-2 pt-1">
-                                <Button
-                                  size="sm"
-                                  disabled={busy !== null}
-                                  onClick={() =>
-                                    handleAccept(claim.claimId, batchSettle)
-                                  }
-                                >
-                                  {batchSettle ? "Approve & settle" : "Approve"}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  disabled={busy !== null}
-                                  onClick={() => handleDispute(claim.claimId)}
-                                >
-                                  Dispute
-                                </Button>
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2 pt-1 sm:flex sm:flex-wrap">
+                                  <Button
+                                    className="h-auto min-h-11 whitespace-normal px-3 py-2 leading-snug sm:min-h-9 sm:py-1.5 sm:text-xs"
+                                    disabled={busy !== null}
+                                    onClick={() =>
+                                      handleAccept(claim.claimId, batchSettle)
+                                    }
+                                  >
+                                    {batchSettle ? "Approve & settle" : "Approve"}
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    className="h-auto min-h-11 whitespace-normal px-3 py-2 leading-snug sm:min-h-9 sm:py-1.5 sm:text-xs"
+                                    disabled={busy !== null}
+                                    onClick={() => handleDispute(claim.claimId)}
+                                  >
+                                    Dispute
+                                  </Button>
+                                </div>
+                                {live.lease &&
+                                  (live.chainNowSec > claim.filedAt + live.lease.responseWindow ? (
+                                    <p className="text-sm text-muted-foreground sm:text-xs">
+                                      The time to answer has passed, so this claim now counts as accepted.
+                                    </p>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground sm:text-xs">
+                                      Answer by{" "}
+                                      {new Date(
+                                        (claim.filedAt + live.lease.responseWindow) * 1000,
+                                      ).toLocaleString("en-US", {
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "numeric",
+                                        minute: "2-digit",
+                                      })}
+                                      . If you don&apos;t, this claim counts as accepted.
+                                    </p>
+                                  ))}
                               </div>
                             )}
 
@@ -972,6 +997,7 @@ export default function LeaseClaimsPage({
                                 <Button
                                   size="sm"
                                   variant="outline"
+                                  className="max-sm:h-11 max-sm:w-full"
                                   disabled={busy !== null}
                                   onClick={() => handleWithdraw(claim.claimId)}
                                 >

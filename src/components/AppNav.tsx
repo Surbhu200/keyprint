@@ -21,15 +21,23 @@ export function AppNav({ receipts = [] }: AppNavProps) {
 
   return (
     <>
-      <div className="w-full border-b border-border/60 bg-surface/80 px-5 py-2 flex justify-end">
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface hover:bg-muted px-3 py-1 text-xs font-medium text-foreground cursor-pointer"
-        >
-          <Receipt className="h-3.5 w-3.5 text-accent" />
-          <span>View sealed receipts ({receipts.length})</span>
-        </button>
+      <div className="w-full bg-surface">
+        <div className="mx-auto flex max-w-6xl justify-end px-4 pt-1">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-haspopup="dialog"
+            className="group inline-flex h-11 items-center px-1 cursor-pointer [-webkit-tap-highlight-color:transparent] focus-visible:outline-none"
+          >
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-surface pl-2.5 pr-1.5 text-xs font-medium text-foreground shadow-xs transition-colors group-hover:bg-muted group-active:bg-border/60 group-focus-visible:ring-2 group-focus-visible:ring-accent/60">
+              <Receipt className="h-3.5 w-3.5 text-accent" />
+              <span>Sealed receipts</span>
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent/10 px-1.5 text-[11px] font-semibold tabular-nums text-accent">
+                {receipts.length}
+              </span>
+            </span>
+          </button>
+        </div>
       </div>
       <DetailsDrawer
         open={drawerOpen}

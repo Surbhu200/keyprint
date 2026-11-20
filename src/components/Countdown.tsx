@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Clock, ShieldCheck } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 
 interface CountdownProps {
@@ -135,7 +136,7 @@ export function Countdown({
   }, [isExpired, leaseId, hasManualRelease, manualReleaseLabel]);
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div className="space-y-1">
         <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           {displayExpired ? (
@@ -143,24 +144,41 @@ export function Countdown({
           ) : (
             <Clock className="h-3.5 w-3.5 text-accent" />
           )}
-          <span>{displayExpired ? "Deadline reached" : "Countdown"}</span>
+          <span>{displayExpired ? "Deadline reached" : "Time left"}</span>
         </div>
         <p className="text-sm text-foreground">
           {displayExpired ? expiredMessage : activeMessage}
         </p>
         {keeperStatus && (
-          <p className="text-xs text-sealed font-medium" aria-live="polite">
+          <p
+            className={cn(
+              "text-sm font-medium",
+              keeperStatus === "Keyprint released it." ? "text-sealed" : "text-muted-foreground",
+            )}
+            aria-live="polite"
+          >
             {keeperStatus}
           </p>
         )}
       </div>
 
-      <div className="flex items-center gap-4 shrink-0">
-        <div className="text-3xl sm:text-4xl font-semibold tabular-nums tracking-tight text-foreground">
+      <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:flex-nowrap sm:gap-4">
+        {/* Accent (not red: red means claim) in the final 10 seconds draws the eye. */}
+        <div
+          role="timer"
+          className={cn(
+            "text-4xl font-semibold tabular-nums tracking-tight transition-colors motion-reduce:transition-none",
+            displayExpired
+              ? "text-sealed"
+              : remaining <= 10
+                ? "text-accent"
+                : "text-foreground",
+          )}
+        >
           {formatRemaining(remaining)}
         </div>
         {isExpired && onManualRelease && (
-          <Button onClick={onManualRelease} disabled={releasing}>
+          <Button onClick={onManualRelease} disabled={releasing} className="w-full sm:w-auto">
             {releasing ? "Releasing…" : manualReleaseLabel}
           </Button>
         )}
