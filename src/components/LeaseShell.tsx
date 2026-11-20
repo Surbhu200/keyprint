@@ -3,13 +3,14 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ChevronRight, ShieldCheck } from "lucide-react";
 import { formatDollars, getEscrowAddress, LeaseStateLabel } from "@/lib/chain/arc";
 import { cn } from "@/lib/utils";
 import { AppNav } from "./AppNav";
 import { Badge } from "./ui/badge";
 import type { ReceiptLink } from "./DetailsDrawer";
 import type { LeaseLiveState } from "./useLeaseLiveState";
+import { usePasskeySession } from "./usePasskeySession";
 
 interface LeaseShellProps {
   leaseId: string;
@@ -19,6 +20,7 @@ interface LeaseShellProps {
 
 export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
   const pathname = usePathname();
+  const session = usePasskeySession();
 
   // Any open lease screen asks Keyprint's keeper to settle once the claim deadline has passed
   // (anyone may settle; the keeper re-checks every contract rule before sending anything).
@@ -100,6 +102,29 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
           : `${amount} protected`;
   }
 
+  // One clear next step for whoever is looking, so nobody has to guess which tab comes next.
+  const me = session?.address?.toLowerCase();
+  const isRenter = Boolean(me && live.lease && live.lease.renter.toLowerCase() === me);
+  const isLandlord = Boolean(me && live.lease && live.lease.landlord.toLowerCase() === me);
+  let nextStep: { text: string; href?: string } | null = null;
+  if (live.lease) {
+    const s = live.lease.state;
+    if (s === 0) {
+      nextStep = isRenter
+        ? { text: "Next: import your move-in scan and tap Seal & protect", href: `${base}/capture` }
+        : { text: "Waiting for the renter to seal the move-in scan and protect the deposit" };
+    } else if (s === 1) {
+      nextStep = { text: "Next, at move-out: line up the move-out scan on Compare", href: `${base}/compare` };
+    } else if (s === 2) {
+      nextStep = isLandlord
+        ? { text: "Next: pin and price any damage on Claims", href: `${base}/claims` }
+        : { text: "Next: review the landlord's claims", href: `${base}/claims` };
+    } else if (s === 3) {
+      nextStep = { text: "Settled: see who got what", href: `${base}/settle` };
+    }
+    if (nextStep?.href === pathname) nextStep = null;
+  }
+
   let notice: string | null = null;
   if (!getEscrowAddress()) {
     notice = "This deployment isn't connected to the protection service yet, so lease details can't load.";
@@ -160,10 +185,11 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
             </div>
           </div>
 
+          {/* Phones: all six steps in one row, no sideways scrolling. Larger screens: labelled chips. */}
           <nav
             ref={navRef}
             aria-label="Lease steps"
-            className="no-scrollbar relative -mx-4 -my-1 flex snap-x gap-1.5 overflow-x-auto scroll-px-4 px-4 sm:mx-0 sm:my-0 sm:scroll-px-0 sm:px-0"
+            className="grid grid-cols-6 gap-1 sm:no-scrollbar sm:flex sm:gap-1.5 sm:overflow-x-auto"
           >
             {tabs.map((tab, i) => {
               const active = pathname === tab.href;
@@ -174,28 +200,23 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
                   aria-current={active ? "page" : undefined}
                   aria-label={tab.label}
                   data-active={active ? "true" : undefined}
-                  className="group inline-flex h-11 shrink-0 snap-start items-center rounded-full [-webkit-tap-highlight-color:transparent] focus-visible:outline-none sm:h-9"
+                  className={cn(
+                    "group flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-1 text-[12px] font-medium leading-none transition-colors duration-200 [-webkit-tap-highlight-color:transparent] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+                    "sm:h-8 sm:min-h-0 sm:shrink-0 sm:flex-row sm:gap-1.5 sm:rounded-full sm:px-3 sm:py-0 sm:text-[13px]",
+                    active ? "bg-ink text-white" : "bg-muted text-muted-foreground hover:text-foreground",
+                  )}
                 >
                   <span
+                    aria-hidden="true"
                     className={cn(
-                      "inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[14px] font-medium whitespace-nowrap transition-colors duration-200 group-focus-visible:ring-2 group-focus-visible:ring-accent/60 sm:h-8 sm:px-3 sm:text-[13px]",
-                      active
-                        ? "bg-ink text-white"
-                        : "bg-muted text-muted-foreground group-hover:text-foreground",
+                      "flex h-5 w-5 items-center justify-center rounded-full text-[12px] font-semibold tabular-nums sm:hidden",
+                      active ? "bg-white/15" : "bg-surface text-foreground",
                     )}
                   >
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "flex h-5 w-5 items-center justify-center rounded-full text-[12px] font-semibold tabular-nums sm:hidden",
-                        active ? "bg-white/15" : "bg-surface text-foreground",
-                      )}
-                    >
-                      {i + 1}
-                    </span>
-                    <span className="sm:hidden">{tab.short}</span>
-                    <span className="hidden sm:inline">{tab.label}</span>
+                    {i + 1}
                   </span>
+                  <span className="max-w-full truncate sm:hidden">{tab.short}</span>
+                  <span className="hidden whitespace-nowrap sm:inline">{tab.label}</span>
                 </Link>
               );
             })}
@@ -211,6 +232,18 @@ export function LeaseShell({ leaseId, live, children }: LeaseShellProps) {
       </div>
 
       <main className="flex-1 mx-auto w-full max-w-6xl px-5 py-6 space-y-4">
+        {nextStep &&
+          (nextStep.href ? (
+            <Link
+              href={nextStep.href}
+              className="flex min-h-12 items-center justify-between gap-3 rounded-2xl bg-ink px-4 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-ink-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+            >
+              <span>{nextStep.text}</span>
+              <ChevronRight aria-hidden="true" className="h-5 w-5 shrink-0 text-sealed-bright" />
+            </Link>
+          ) : (
+            <p className="rounded-2xl bg-muted px-4 py-3 text-[14px] text-muted-foreground">{nextStep.text}</p>
+          ))}
         {notice && (
           <div
             role="status"
