@@ -442,9 +442,32 @@ export function friendlyError(err: unknown, fallback = "Something went wrong. No
     return "Couldn't reach Arc right now. Check the connection and try again.";
   }
   if (text.includes("useroperation") || text.includes("calldata") || text.includes("0x")) {
-    return fallback;
+    return withCause(fallback, err);
   }
-  return raw.length > 160 ? fallback : raw;
+  return raw.length > 160 ? withCause(fallback, err) : raw;
+}
+
+/**
+ * Adds the deepest short reason from a wallet/bundler error chain (for example
+ * "AA24 signature error") to a friendly message, with hex blobs removed, so a failed
+ * step can be diagnosed from the screen of a phone.
+ */
+function withCause(message: string, err: unknown): string {
+  let reason = "";
+  let current: unknown = err;
+  for (let depth = 0; depth < 8 && current && typeof current === "object"; depth++) {
+    const e = current as { shortMessage?: unknown; details?: unknown; cause?: unknown };
+    const short = typeof e.shortMessage === "string" ? e.shortMessage : "";
+    const details = typeof e.details === "string" ? e.details : "";
+    if (short || details) reason = [short, details && !short.includes(details) ? details : ""].filter(Boolean).join(" ");
+    current = e.cause;
+  }
+  const clean = reason
+    .replace(/0x[0-9a-fA-F]{12,}/g, "0x…")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+  return clean ? `${message} Details: ${clean}` : message;
 }
 
 /**
