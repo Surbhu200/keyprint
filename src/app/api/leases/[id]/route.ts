@@ -6,6 +6,7 @@ import {
   KEYPRINT_ESCROW_ABI,
   RecordKind,
 } from "@/lib/chain/arc";
+import { resolveSettledBy } from "@/lib/chain/keeper-info";
 import { readRecordsOnchain } from "@/lib/evidence/onchain-record";
 import { REFERENCE_MOVE_IN_URL, REFERENCE_MOVE_OUT_URL } from "@/lib/sample/reference";
 import {
@@ -58,7 +59,7 @@ export async function GET(
 
   try {
     const supabase = getSupabaseAdmin();
-    const [{ data: lease }, { data: records }, { data: reports }] = await Promise.all([
+    const [{ data: lease }, { data: records }, { data: reports }, { data: photoRows }] = await Promise.all([
       supabase.from("leases").select("*").eq("lease_id", leaseId).maybeSingle(),
       supabase
         .from("records")
@@ -73,7 +74,43 @@ export async function GET(
         .eq("lease_id", leaseId)
         .order("created_at", { ascending: false })
         .limit(5),
+      // Pin close-up photos: their storage paths stay on the server; only signed links go out.
+      supabase
+        .from("records")
+        .select("record_id, file_paths")
+        .eq("lease_id", leaseId)
+        .eq("kind", RecordKind.Pin)
+        .limit(200),
     ]);
+
+    const photoPrefix = `leases/${leaseId}/pins/`;
+    const photoEntries: Array<[string, string]> = [];
+    for (const row of photoRows ?? []) {
+      const path = Array.isArray(row.file_paths) ? row.file_paths[0] : null;
+      if (typeof path === "string" && !path.includes("..") && path.toLowerCase().startsWith(photoPrefix)) {
+        photoEntries.push([String(row.record_id).toLowerCase(), path]);
+      }
+    }
+    const pinPhotos: Record<string, string> = {};
+    if (photoEntries.length > 0) {
+      const { data: signed } = await supabase.storage
+        .from(DEFAULT_STORAGE_BUCKET)
+        .createSignedUrls(
+          photoEntries.map(([, path]) => path),
+          3600,
+        );
+      signed?.forEach((item, i) => {
+        if (item.signedUrl && !item.error) pinPhotos[photoEntries[i][0]] = item.signedUrl;
+      });
+    }
+
+    // Who sent the settlement: Keyprint's deadline keeper, a lease party, or someone else.
+    const settledBy = lease?.settled_tx_hash
+      ? await resolveSettledBy(lease.settled_tx_hash, {
+          renter: lease.renter_address,
+          landlord: lease.landlord_address,
+        })
+      : null;
 
     const [moveInUrl, moveOutUrl] = await Promise.all([
       maybeSignUrl(leaseId, lease?.move_in_scan_path),
@@ -82,12 +119,13 @@ export async function GET(
 
     return NextResponse.json({
       configured: true,
-      lease: lease ?? null,
+      lease: lease ? { ...lease, settled_by: settledBy } : null,
       records: records ?? [],
       reports: reports ?? [],
       signedUrls: {
         moveInScan: moveInUrl,
         moveOutScan: moveOutUrl,
+        pinPhotos,
       },
     });
   } catch (err) {

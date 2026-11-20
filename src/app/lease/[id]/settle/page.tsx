@@ -224,7 +224,13 @@ export default function LeaseSettlePage({
             </CardTitle>
             <CardDescription>
               {isSettled
-                ? "Paid out in USDC on Arc according to the lease rules, with no admin key."
+                ? `Paid out in USDC on Arc according to the lease rules, with no admin key.${
+                    live.meta?.settled_by === "keeper"
+                      ? " Released automatically by Keyprint once the deadline passed."
+                      : live.meta?.settled_by === "party"
+                        ? " Released with one tap by the renter or landlord."
+                        : ""
+                  }`
                 : leaseState === 2
                   ? "Accept, dispute, or wait out the deadlines on the Claims tab."
                   : "Once the move-out scan is sealed, the landlord gets a claim window. No claims means the full deposit goes back."}

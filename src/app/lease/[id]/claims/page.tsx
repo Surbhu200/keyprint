@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { encodeFunctionData, parseUnits, type Hex } from "viem";
 import {
@@ -48,7 +48,6 @@ import {
 import { countsAsMoveInPin } from "@/lib/evidence/pin-rules";
 import { saveRecordManifests } from "@/lib/evidence/record-store";
 import { REFERENCE_SPOTS } from "@/lib/sample/reference";
-import { getSignedReadUrl } from "@/lib/supabase/upload";
 import { cn } from "@/lib/utils";
 
 interface DraftClaimPin {
@@ -158,32 +157,8 @@ export default function LeaseClaimsPage({
       .filter((x): x is MoveInPinRef => x !== null);
   }, [live.records, live.coSignedMap, live.lease, moveInCreatedAt]);
 
-  // Resolve signed photo URLs for any move-in pins that include an attached photo
-  const [pinPhotoUrls, setPinPhotoUrls] = useState<Record<string, string>>({});
-  const moveInPinPhotoPaths = useMemo(() => {
-    const entries: Array<[string, string]> = [];
-    for (const r of live.records) {
-      if (r.kind === RecordKind.Pin && r.file_paths?.[0]) {
-        entries.push([r.record_id.toLowerCase(), r.file_paths[0]]);
-      }
-    }
-    return entries;
-  }, [live.records]);
-
-  useEffect(() => {
-    let active = true;
-    for (const [recId, path] of moveInPinPhotoPaths) {
-      if (pinPhotoUrls[recId]) continue;
-      getSignedReadUrl(path)
-        .then((url) => {
-          if (active) setPinPhotoUrls((prev) => ({ ...prev, [recId]: url }));
-        })
-        .catch(() => null);
-    }
-    return () => {
-      active = false;
-    };
-  }, [moveInPinPhotoPaths, pinPhotoUrls]);
+  // Signed links to move-in pin close-up photos (signed server-side; paths never reach the page).
+  const pinPhotoUrls = live.signedUrls.pinPhotos;
 
   // The sealed alignment for this lease's move-in/move-out pair (maps move-out → move-in).
   const sealedAlignment = useMemo(

@@ -143,7 +143,7 @@ export default function LeaseComparePage({
   const [alignment, setAlignment] = useState<AlignmentOutput | null>(null);
   const [changes, setChanges] = useState<ReviewableChange[]>([]);
   const [aiSource, setAiSource] = useState<string | null>(null);
-  const [promptVersion, setPromptVersion] = useState("keyprint-diff-v1");
+  const [promptVersion, setPromptVersion] = useState("keyprint-diff-v2");
   const [viewIds, setViewIds] = useState<string[]>([]);
   const [viewSnapshots, setViewSnapshots] = useState<
     Record<string, { before: string; after: string }>

@@ -92,6 +92,7 @@ export interface StoredLeaseMeta {
   funded_tx_hash: string | null;
   ended_tx_hash: string | null;
   settled_tx_hash: string | null;
+  settled_by?: "keeper" | "party" | "other" | null;
   total_gas_cost_wei: string | null;
   tx_count: number | null;
 }
@@ -108,7 +109,11 @@ export interface LeaseLiveState {
   /** How many index rows were dropped because they don't match Arc (shown as a warning, never used). */
   unverifiedRecordCount: number;
   coSignedMap: Record<string, number>;
-  signedUrls: { moveInScan?: string | null; moveOutScan?: string | null };
+  signedUrls: {
+    moveInScan?: string | null;
+    moveOutScan?: string | null;
+    pinPhotos: Record<string, string>;
+  };
   refresh: () => Promise<void>;
 }
 
@@ -137,10 +142,9 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
   const [records, setRecords] = useState<StoredRecordRow[]>([]);
   const [unverifiedRecordCount, setUnverifiedRecordCount] = useState(0);
   const [coSignedMap, setCoSignedMap] = useState<Record<string, number>>({});
-  const [signedUrls, setSignedUrls] = useState<{
-    moveInScan?: string | null;
-    moveOutScan?: string | null;
-  }>({});
+  const [signedUrls, setSignedUrls] = useState<LeaseLiveState["signedUrls"]>({
+    pinPhotos: {},
+  });
 
   const inFlight = useRef<Promise<void> | null>(null);
   const verifiedCache = useRef(new Map<string, VerifiedEntry>());
@@ -249,7 +253,18 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
           : [];
         const nextMeta: StoredLeaseMeta | null = apiRes.lease ?? null;
         setMeta(nextMeta);
+        // Sealed records never change, so a record's photo link is kept stable (no flicker).
+        const rawPhotos: Record<string, unknown> =
+          apiRes.signedUrls?.pinPhotos && typeof apiRes.signedUrls.pinPhotos === "object"
+            ? apiRes.signedUrls.pinPhotos
+            : {};
+        const pinPhotos: Record<string, string> = {};
+        for (const [recordId, url] of Object.entries(rawPhotos)) {
+          const stable = typeof url === "string" ? stableUrl(`pin-photo:${recordId}`, url) : null;
+          if (stable) pinPhotos[recordId.toLowerCase()] = stable;
+        }
         setSignedUrls({
+          pinPhotos,
           moveInScan: stableUrl(nextMeta?.move_in_scan_path, apiRes.signedUrls?.moveInScan),
           moveOutScan: stableUrl(nextMeta?.move_out_scan_path, apiRes.signedUrls?.moveOutScan),
         });
