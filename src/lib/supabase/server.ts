@@ -16,6 +16,16 @@ export const ALLOWED_UPLOAD_MIMES = new Set([
 
 let cachedClient: SupabaseClient | null = null;
 
+/**
+ * Storage keys this app creates only use letters, digits and . _ - / (see /api/upload-url).
+ * Anything else (percent-encoding, backslashes) or a "." / ".." segment is rejected, so a
+ * crafted path can't make a signed URL or download point outside the intended folder.
+ */
+export function isSafeStoragePath(path: string): boolean {
+  if (!/^[A-Za-z0-9._/-]{1,300}$/.test(path)) return false;
+  return path.split("/").every((seg) => seg.length > 0 && seg !== "." && seg !== "..");
+}
+
 export function isSupabaseConfigured(): boolean {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&

@@ -6,12 +6,14 @@ import { AlertTriangle, CheckCircle2, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  applyMatrix4ColumnMajor,
   solveUmeyama,
   type UmeyamaResult,
   type Vec3,
 } from "@/lib/three/umeyama";
 import {
   computeSurfaceAgreement,
+  refineAlignmentICP,
   type SurfaceAgreementMetrics,
 } from "@/lib/three/bvh";
 import { RoomViewer, type SurfaceTapEvent } from "./RoomViewer";
@@ -22,6 +24,45 @@ export interface AlignmentOutput {
   agreement: SurfaceAgreementMetrics;
   moveInPoints: Vec3[];
   moveOutPoints: Vec3[];
+  /** Set when the tap-based fit was fine-tuned automatically (surface share within 5 cm). */
+  fineTuned?: { beforeShare: number; afterShare: number };
+}
+
+/** Keeps the tap-based scale and taps, swaps in the fine-tuned rotation and translation. */
+function withFineTune(
+  umeyama: UmeyamaResult,
+  refined: ReturnType<typeof refineAlignmentICP>,
+  outPts: Vec3[],
+  inPts: Vec3[],
+): UmeyamaResult {
+  let errSum = 0;
+  for (let i = 0; i < outPts.length; i++) {
+    const m = applyMatrix4ColumnMajor(refined.matrixColumnMajor, outPts[i]);
+    errSum += (m[0] - inPts[i][0]) ** 2 + (m[1] - inPts[i][1]) ** 2 + (m[2] - inPts[i][2]) ** 2;
+  }
+  const warnings = umeyama.warnings.filter(
+    (w) => !w.startsWith("Floor tilt") && !w.startsWith("Solved scale"),
+  );
+  if (refined.scale < 0.98 || refined.scale > 1.02) {
+    warnings.push(
+      `Solved scale ${refined.scale.toFixed(4)} is outside 0.98–1.02. Check that all 4 taps match the same spots.`,
+    );
+  }
+  if (refined.floorTiltDeg > 1.0) {
+    warnings.push(
+      `Floor tilt is ${refined.floorTiltDeg.toFixed(2)}° (above 1.0°). Re-tap corners on two different walls if this looks tilted.`,
+    );
+  }
+  return {
+    ...umeyama,
+    scale: refined.scale,
+    rotation: refined.rotation,
+    translation: refined.translation,
+    matrix4ColumnMajor: refined.matrixColumnMajor,
+    floorTiltDeg: refined.floorTiltDeg,
+    tapRmsErrorMeters: Math.sqrt(errSum / outPts.length),
+    warnings,
+  };
 }
 
 interface AlignmentToolProps {
@@ -75,29 +116,63 @@ export function AlignmentTool({
       }
 
       setComputing(true);
-      try {
-        // Order strictly matches docs/BUILD.md: p = moveOutPoints, q = moveInPoints
-        const umeyama = solveUmeyama(outPts, inPts);
-        const agreement = computeSurfaceAgreement(
-          moveInSceneRef.current,
-          moveOutSceneRef.current,
-          umeyama.matrix4ColumnMajor,
-          { maxMedianGapMeters, minShareWithin5cm, sampleCount: 5000 },
-        );
-        const output: AlignmentOutput = {
-          umeyama,
-          agreement,
-          moveInPoints: inPts,
-          moveOutPoints: outPts,
-        };
-        setResult(output);
-        onAligned?.(output);
-      } catch (err) {
-        setResult(null);
-        setError(err instanceof Error ? err.message : "Alignment failed.");
-      } finally {
-        setComputing(false);
-      }
+      const moveInScene = moveInSceneRef.current;
+      const moveOutScene = moveOutSceneRef.current;
+      // Let "Measuring…" paint before the heavy work: fine-tuning can take a few seconds.
+      window.setTimeout(() => {
+        try {
+          // Order strictly matches docs/BUILD.md: p = moveOutPoints, q = moveInPoints
+          const tapFit = solveUmeyama(outPts, inPts);
+          // Hand taps are only accurate to a centimeter or two, so the surfaces are then snapped
+          // together automatically (kept only if the fit improves).
+          const gateConfig = { maxMedianGapMeters, minShareWithin5cm, sampleCount: 5000 };
+          let umeyama = tapFit;
+          let agreement = computeSurfaceAgreement(
+            moveInScene,
+            moveOutScene,
+            tapFit.matrix4ColumnMajor,
+            gateConfig,
+          );
+          let fineTuned: AlignmentOutput["fineTuned"];
+          try {
+            const refined = refineAlignmentICP(moveInScene, moveOutScene, tapFit.matrix4ColumnMajor);
+            if (refined.improved) {
+              const tuned = withFineTune(tapFit, refined, outPts, inPts);
+              const tunedAgreement = computeSurfaceAgreement(
+                moveInScene,
+                moveOutScene,
+                tuned.matrix4ColumnMajor,
+                gateConfig,
+              );
+              // The gate decides: keep the tap fit if only it passes.
+              if (tunedAgreement.passedGate || !agreement.passedGate) {
+                umeyama = tuned;
+                agreement = tunedAgreement;
+                fineTuned = {
+                  beforeShare: refined.before.shareWithin5cm,
+                  afterShare: refined.after.shareWithin5cm,
+                };
+              }
+            }
+          } catch (refineErr) {
+            console.warn("Alignment fine-tune skipped:", refineErr);
+          }
+          const output: AlignmentOutput = {
+            umeyama,
+            agreement,
+            moveInPoints: inPts,
+            moveOutPoints: outPts,
+            fineTuned,
+          };
+          setResult(output);
+          onAligned?.(output);
+        } catch (err) {
+          setResult(null);
+          setError(err instanceof Error ? err.message : "Alignment failed.");
+        } finally {
+          setComputing(false);
+        }
+      }, 30);
     },
     [maxMedianGapMeters, minShareWithin5cm, onAligned],
   );
@@ -141,7 +216,7 @@ export function AlignmentTool({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
-          Tap the same 4 distinctive spots (door corner, outlet, window edge, desk corner) in each scan, across at least two walls.
+          Tap the same 4 distinctive spots (door corner, outlet, window edge, desk corner) in each scan, across at least two walls. Close is enough: Keyprint fine-tunes the fit automatically.
         </div>
         <div className="flex items-center gap-2">
           {presetLandmarks && (
@@ -261,6 +336,13 @@ export function AlignmentTool({
               </div>
             </div>
           </div>
+
+          {result.fineTuned && (
+            <p className="text-xs text-muted-foreground">
+              Fine-tuned automatically from your taps: {Math.round(result.fineTuned.beforeShare * 100)}% →{" "}
+              {Math.round(result.fineTuned.afterShare * 100)}% of the surface within 5 cm.
+            </p>
+          )}
 
           {result.umeyama.warnings.length > 0 && (
             <ul className="space-y-1 text-xs text-suggestion">

@@ -1,7 +1,7 @@
 // Server-only: reads KEEPER_KEY. Import it from route handlers, never from client components.
-import type { Address, Hex } from "viem";
+import { parseEventLogs, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { createArcPublicClient } from "./arc";
+import { createArcPublicClient, getEscrowAddress, KEYPRINT_ESCROW_ABI } from "./arc";
 
 export type SettledBy = "keeper" | "party" | "other";
 
@@ -20,8 +20,10 @@ export function getKeeperAddress(): Address | null {
 }
 
 /**
- * Checks on Arc who sent the settlement transaction (`settled_tx_hash`).
- * Memoized in memory per tx hash because confirmed transactions never change sender.
+ * Who settled a lease, read from the `caller` of the LeaseSettled event in the settlement
+ * receipt (not the tx sender: a passkey account settles through Circle's bundler, so the
+ * sender is the bundler while `caller` is the person's own account).
+ * Memoized per tx hash because confirmed receipts never change; failures aren't cached.
  */
 export async function resolveSettledBy(
   settledTxHash: string | null | undefined,
@@ -35,18 +37,26 @@ export async function resolveSettledBy(
   if (cached) return cached;
 
   try {
-    const tx = await createArcPublicClient().getTransaction({ hash: key as Hex });
-    const sender = tx.from.toLowerCase();
+    const escrow = getEscrowAddress()?.toLowerCase();
+    const receipt = await createArcPublicClient().getTransactionReceipt({ hash: key as Hex });
+    const settled = parseEventLogs({
+      abi: KEYPRINT_ESCROW_ABI,
+      logs: receipt.logs,
+      eventName: "LeaseSettled",
+    }).find((log) => !escrow || log.address.toLowerCase() === escrow);
+    if (!settled) return null;
+
+    const caller = settled.args.caller.toLowerCase();
     const keeper = getKeeperAddress()?.toLowerCase();
     // A lease party counts first: if the keeper's account is also a party (as in the scripted
     // reference lease), the settlement was not "automatic".
     let result: SettledBy = "other";
     if (
-      (parties?.renter && sender === parties.renter.toLowerCase()) ||
-      (parties?.landlord && sender === parties.landlord.toLowerCase())
+      (parties?.renter && caller === parties.renter.toLowerCase()) ||
+      (parties?.landlord && caller === parties.landlord.toLowerCase())
     ) {
       result = "party";
-    } else if (keeper && sender === keeper) {
+    } else if (keeper && caller === keeper) {
       result = "keeper";
     }
     settledByCache.set(key, result);

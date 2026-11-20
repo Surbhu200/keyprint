@@ -173,9 +173,16 @@ function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 7);
 }
 
+/** A fresh suffix for a new Circle passkey username (one per sign-up attempt). */
+export function newPasskeySuffix(): string {
+  return randomSuffix();
+}
+
 type OptionsMethod = "rp_getRegistrationOptions" | "rp_getLoginOptions";
 
-const PREFETCH_TTL_MS = 2 * 60 * 1000;
+// Used for up to 50 s; refreshed once older than 20 s (pages refresh it every 40 s).
+const PREFETCH_TTL_MS = 50 * 1000;
+const PREFETCH_REFRESH_AFTER_MS = 20 * 1000;
 let prefetchedOptions: Array<{ method: OptionsMethod; key: string; result: unknown; at: number }> = [];
 
 function realPasskeyTransport() {
@@ -193,7 +200,11 @@ export async function prefetchPasskeyOptions(kind: "register" | "login", usernam
   const method: OptionsMethod = kind === "register" ? "rp_getRegistrationOptions" : "rp_getLoginOptions";
   const key = kind === "register" ? username.trim() : "";
   const now = Date.now();
-  if (prefetchedOptions.some((o) => o.method === method && o.key === key && now - o.at < PREFETCH_TTL_MS)) {
+  if (
+    prefetchedOptions.some(
+      (o) => o.method === method && o.key === key && now - o.at < PREFETCH_REFRESH_AFTER_MS,
+    )
+  ) {
     return;
   }
   try {

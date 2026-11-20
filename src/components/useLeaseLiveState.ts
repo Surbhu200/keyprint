@@ -150,15 +150,18 @@ export function useLeaseLiveState(leaseId: string): LeaseLiveState {
   const verifiedCache = useRef(new Map<string, VerifiedEntry>());
   // Signed storage URLs carry a fresh token on every poll; keep the first one per path
   // so viewers don't re-download the whole scan every 2 seconds.
-  const urlByPath = useRef(new Map<string, string>());
+  // Signed links are kept stable per path (no reloads every poll) but replaced before their
+  // 1-hour expiry.
+  const urlByPath = useRef(new Map<string, { url: string; at: number }>());
 
   const stableUrl = useCallback(
     (path: string | null | undefined, fresh: string | null | undefined) => {
       if (!fresh) return null;
       if (!path) return fresh;
       const known = urlByPath.current.get(path);
-      if (known) return known;
-      urlByPath.current.set(path, fresh);
+      const now = Date.now();
+      if (known && now - known.at < 50 * 60 * 1000) return known.url;
+      urlByPath.current.set(path, { url: fresh, at: now });
       return fresh;
     },
     [],

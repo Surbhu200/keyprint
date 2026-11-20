@@ -138,6 +138,18 @@ export function buildDefaultViewpoints(
       cameraPos: [center.x - size.x * 0.1, eye(1.45), center.z + size.z * 0.15],
       lookAt: [box.min.x + size.x * 0.3, floorY + 0.78, box.min.z + size.z * 0.18],
     },
+    // The other two sides: a phone scan's "corner" can face any way, so damage on the
+    // opposite walls must be in view too.
+    {
+      viewId: "overview-right-wall",
+      cameraPos: [center.x - size.x * 0.35, eye(1.25), center.z - size.z * 0.25],
+      lookAt: [box.max.x - 0.05, floorY + 0.75, center.z - 0.15],
+    },
+    {
+      viewId: "overview-front-wall",
+      cameraPos: [center.x, eye(1.35), center.z - size.z * 0.42],
+      lookAt: [center.x, floorY + 1.1, box.max.z - 0.05],
+    },
   ];
 
   for (const c of coverage) {

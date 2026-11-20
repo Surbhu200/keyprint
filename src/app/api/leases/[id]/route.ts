@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Hex } from "viem";
+import { parseEventLogs, type Hex } from "viem";
 import {
   createArcPublicClient,
   getEscrowAddress,
@@ -12,6 +12,7 @@ import { REFERENCE_MOVE_IN_URL, REFERENCE_MOVE_OUT_URL } from "@/lib/sample/refe
 import {
   DEFAULT_STORAGE_BUCKET,
   getSupabaseAdmin,
+  isSafeStoragePath,
   isSupabaseConfigured,
 } from "@/lib/supabase/server";
 
@@ -23,6 +24,7 @@ const PLACEHOLDER_PATHS = new Set([REFERENCE_MOVE_IN_URL, REFERENCE_MOVE_OUT_URL
 function isAllowedScanPath(leaseId: string, path: unknown): path is string {
   if (typeof path !== "string" || path.length > 300 || path.includes("..")) return false;
   if (PLACEHOLDER_PATHS.has(path)) return true;
+  if (!isSafeStoragePath(path)) return false;
   return path.toLowerCase().startsWith(`leases/${leaseId}/`);
 }
 
@@ -87,7 +89,7 @@ export async function GET(
     const photoEntries: Array<[string, string]> = [];
     for (const row of photoRows ?? []) {
       const path = Array.isArray(row.file_paths) ? row.file_paths[0] : null;
-      if (typeof path === "string" && !path.includes("..") && path.toLowerCase().startsWith(photoPrefix)) {
+      if (typeof path === "string" && isSafeStoragePath(path) && path.toLowerCase().startsWith(photoPrefix)) {
         photoEntries.push([String(row.record_id).toLowerCase(), path]);
       }
     }
@@ -183,7 +185,7 @@ export async function PATCH(
     const supabase = getSupabaseAdmin();
     const { data: existing } = await supabase
       .from("leases")
-      .select("move_in_scan_path, move_out_scan_path, total_gas_cost_wei, tx_count")
+      .select("move_in_scan_path, move_out_scan_path, funded_tx_hash, ended_tx_hash, settled_tx_hash, total_gas_cost_wei, tx_count")
       .eq("lease_id", leaseId)
       .maybeSingle();
     if (!existing) {
@@ -257,20 +259,26 @@ export async function PATCH(
       }
     }
 
-    // Tx hashes: keep only those whose receipt contains this lease's escrow log.
+    // Tx hashes: write-once, and only if the receipt holds the matching escrow event for this
+    // lease (a create tx can't be stored as the settlement, for example).
     // (Retried briefly: right after an action this server's RPC can lag a block behind.)
-    for (const col of ["funded_tx_hash", "ended_tx_hash", "settled_tx_hash"] as const) {
+    const TX_EVENTS = {
+      funded_tx_hash: "LeaseFunded",
+      ended_tx_hash: "LeaseEnded",
+      settled_tx_hash: "LeaseSettled",
+    } as const;
+    for (const col of Object.keys(TX_EVENTS) as Array<keyof typeof TX_EVENTS>) {
       const h = String(body[col] ?? "").toLowerCase();
-      if (!HEX32.test(h)) continue;
+      if (!HEX32.test(h) || existing[col]) continue;
       for (let attempt = 0; attempt < 6; attempt++) {
         try {
           const receipt = await client.getTransactionReceipt({ hash: h as Hex });
           const ok =
             receipt.status === "success" &&
-            receipt.logs.some(
+            parseEventLogs({ abi: KEYPRINT_ESCROW_ABI, logs: receipt.logs, eventName: TX_EVENTS[col] }).some(
               (log) =>
                 log.address.toLowerCase() === escrow.toLowerCase() &&
-                (log.topics[1] ?? "").toLowerCase() === leaseId,
+                String(log.args.leaseId).toLowerCase() === leaseId,
             );
           if (ok) patch[col] = h;
           break;

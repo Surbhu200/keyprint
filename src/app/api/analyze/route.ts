@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Hex } from "viem";
 import {
   AI_PROMPT_VERSION,
   analyzeRenderPairs,
@@ -6,13 +7,18 @@ import {
   type RenderPairInput,
 } from "@/lib/ai/analyze";
 import type { ProjectedPin2D } from "@/lib/ai/matching";
+import { createArcPublicClient, getEscrowAddress, KEYPRINT_ESCROW_ABI } from "@/lib/chain/arc";
 import {
   DEFAULT_STORAGE_BUCKET,
   getSupabaseAdmin,
+  isSafeStoragePath,
   isSupabaseConfigured,
 } from "@/lib/supabase/server";
 
-export const maxDuration = 300; // seconds; the Claude call itself times out at 240 s
+// Seconds. Model calls stop well inside this: Claude at 110 s, Gemini at 55 s per model.
+export const maxDuration = 300;
+const MAX_RENDER_BYTES = 3 * 1024 * 1024; // renders are ~100-300 KB JPEGs
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 const HEX32 = /^0x[0-9a-f]{64}$/;
 const MOVE_OUT_KEY = /^(0x[0-9a-f]{64}|sha256:[0-9a-f]{64})$/;
@@ -43,6 +49,7 @@ async function loadImageBase64(
     if (
       !isSupabaseConfigured() ||
       storagePath.includes("..") ||
+      !isSafeStoragePath(storagePath) ||
       !storagePath.toLowerCase().startsWith(prefix)
     ) {
       throw new Error("Render path is not allowed.");
@@ -53,6 +60,9 @@ async function loadImageBase64(
       .download(storagePath);
     if (error || !data) {
       throw new Error("A render could not be read from storage.");
+    }
+    if (data.size > MAX_RENDER_BYTES) {
+      throw new Error("A render is too large.");
     }
     return Buffer.from(await data.arrayBuffer()).toString("base64");
   }
@@ -96,6 +106,23 @@ export async function POST(req: NextRequest) {
   );
   if (inlineChars > MAX_INLINE_BASE64_CHARS) {
     return bad(413, "Too much image data in one request. Upload renders to storage first.");
+  }
+
+  // Only a real lease, compared against its own sealed move-in record, can use the AI.
+  const escrow = getEscrowAddress();
+  if (!escrow) return bad(503, "The escrow address is not configured.");
+  try {
+    const lease = await createArcPublicClient().readContract({
+      address: escrow,
+      abi: KEYPRINT_ESCROW_ABI,
+      functionName: "getLease",
+      args: [leaseId as Hex],
+    });
+    if (lease.landlord === ZERO_ADDRESS || lease.moveInRecordId.toLowerCase() !== moveInRecordId) {
+      return bad(403, "This comparison doesn't match a lease on Arc.");
+    }
+  } catch {
+    return bad(503, "Couldn't check the lease on Arc. Try again in a moment.");
   }
 
   try {

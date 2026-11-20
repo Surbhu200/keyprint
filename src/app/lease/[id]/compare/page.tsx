@@ -167,6 +167,12 @@ export default function LeaseComparePage({
   const moveInUrl = live.signedUrls.moveInScan || null;
   const effectiveMoveOutUrl =
     moveOutFile ? moveOutUrl : live.signedUrls.moveOutScan || moveOutUrl;
+  // After the lease ends, only show the sealed move-out scan (never the bundled sample under a
+  // matrix that was sealed for a different file).
+  const sliderMoveOutUrl =
+    (live.lease?.state ?? 0) >= 2
+      ? live.signedUrls.moveOutScan || (moveOutFile ? moveOutUrl : null)
+      : effectiveMoveOutUrl;
 
   // Which exact move-out file is on screen. A saved alignment is reused only for the same file.
   const currentMoveOutKey = moveOutFile
@@ -712,7 +718,7 @@ export default function LeaseComparePage({
         )}
 
         {/* Hero Time Slider (shown once alignment passes) */}
-        {moveInUrl && activeMatrix && alignmentPassed && (
+        {moveInUrl && sliderMoveOutUrl && activeMatrix && alignmentPassed && (
           <Card>
             <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
@@ -745,7 +751,7 @@ export default function LeaseComparePage({
             <CardContent className="space-y-4">
               <TimeSliderScene
                 moveInUrl={moveInUrl}
-                moveOutUrl={effectiveMoveOutUrl}
+                moveOutUrl={sliderMoveOutUrl}
                 alignmentMatrix={activeMatrix}
                 moveInLabel={
                   moveInCreatedAt
@@ -1110,6 +1116,8 @@ export default function LeaseComparePage({
             <CardContent>
               {moveInUrl ? (
                 <AlignmentTool
+                  // A new move-out file starts a fresh line-up: no stale taps, scene or result.
+                  key={`${moveInUrl}|${effectiveMoveOutUrl}`}
                   moveInUrl={moveInUrl}
                   moveOutUrl={effectiveMoveOutUrl}
                   onAligned={handleAligned}

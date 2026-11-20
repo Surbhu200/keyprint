@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Hex } from "viem";
+import { parseEventLogs, type Hex } from "viem";
 import {
   createArcPublicClient,
   getEscrowAddress,
@@ -99,11 +99,13 @@ export async function POST(req: NextRequest) {
     if (HEX32.test(txCandidate)) {
       try {
         const receipt = await client.getTransactionReceipt({ hash: txCandidate as Hex });
-        const ok = receipt.logs.some(
-          (log) =>
-            log.address.toLowerCase() === escrow.toLowerCase() &&
-            (log.topics[1] ?? "").toLowerCase() === leaseId,
-        );
+        const ok =
+          receipt.status === "success" &&
+          parseEventLogs({ abi: KEYPRINT_ESCROW_ABI, logs: receipt.logs, eventName: "LeaseCreated" }).some(
+            (log) =>
+              log.address.toLowerCase() === escrow.toLowerCase() &&
+              String(log.args.leaseId).toLowerCase() === leaseId,
+          );
         if (ok) createdTxHash = txCandidate;
       } catch {
         // pending or unknown: store without it

@@ -17,7 +17,7 @@ import {
   readRecordsOnchain,
   type OnchainRecordInfo,
 } from "@/lib/evidence/onchain-record";
-import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/supabase/server";
+import { getSupabaseAdmin, isSafeStoragePath, isSupabaseConfigured } from "@/lib/supabase/server";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const HEX32 = /^0x[0-9a-fA-F]{64}$/;
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
 
 const RecordBody = z.object({
   record_id: z.string().regex(HEX32),
-  manifest_json: z.string().min(2).max(16_384),
+  manifest_json: z.string().min(2).max(65_536),
   file_paths: z.array(z.string().max(300)).max(10).optional(),
   tx_hash: z.string().regex(HEX32).nullable().optional(),
   gas_cost_wei: z.string().regex(/^\d{1,40}$/).nullable().optional(),
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
   try {
     body = RecordBody.parse(await req.json());
   } catch {
-    return bad(400, "record_id (32-byte hex) and manifest_json (at most 16 KB) are required.");
+    return bad(400, "record_id (32-byte hex) and manifest_json (at most 64 KB) are required.");
   }
 
   try {
@@ -196,6 +196,7 @@ export async function POST(req: NextRequest) {
     const filePaths = (body.file_paths ?? []).filter(
       (p) =>
         !p.includes("..") &&
+        isSafeStoragePath(p) &&
         allowedPrefixes.some((prefix) => p.toLowerCase().startsWith(prefix)),
     );
 

@@ -182,7 +182,8 @@ export async function GET(req: NextRequest) {
     const { data: leases, error } = await supabase
       .from("leases")
       .select("lease_id")
-      .order("created_at", { ascending: true })
+      .is("settled_tx_hash", null) // settled leases need no keeper
+      .order("created_at", { ascending: false }) // newest first: those are the live demos
       .range(from, from + pageSize - 1);
     if (error || !leases || leases.length === 0) break;
 

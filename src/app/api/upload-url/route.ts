@@ -4,6 +4,7 @@ import {
   ALLOWED_UPLOAD_MIMES,
   DEFAULT_STORAGE_BUCKET,
   getSupabaseAdmin,
+  isSafeStoragePath,
   isSupabaseConfigured,
   MAX_UPLOAD_BYTES,
 } from "@/lib/supabase/server";
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest) {
   }
 
   const objectPath = req.nextUrl.searchParams.get("path")?.trim();
-  if (!objectPath || objectPath.includes("..")) {
+  if (!objectPath || objectPath.includes("..") || !isSafeStoragePath(objectPath)) {
     return NextResponse.json({ error: "Valid storage path required." }, { status: 400 });
   }
   // Only files inside the app's own upload folders can be signed for reading.

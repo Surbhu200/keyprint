@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import {
   loginPasskeyAccount,
+  newPasskeySuffix,
   prefetchPasskeyOptions,
   registerPasskeyAccount,
   toCircleUsername,
@@ -24,8 +25,6 @@ import {
 import { cn } from "@/lib/utils";
 
 const DEFAULT_NAME = "Renter";
-// One suffix per page load, so the prefetched passkey options match the tap exactly.
-const PAGE_SUFFIX = Math.random().toString(36).slice(2, 7);
 
 const STEP_LABEL: Record<PasskeyStep, string> = {
   preparing: "Getting ready…",
@@ -71,25 +70,33 @@ export default function StartPage() {
   const [step, setStep] = useState<PasskeyStep | null>(null);
   const [error, setError] = useState<{ message: string; detail: string } | null>(null);
   const effectiveName = name.trim() || DEFAULT_NAME;
-  const circleUsername = toCircleUsername(effectiveName, PAGE_SUFFIX);
+  // The Circle username doesn't depend on what's typed, so typing never invalidates the
+  // prefetched passkey options; a fresh suffix per sign-up attempt avoids reusing a username.
+  const [suffix, setSuffix] = useState(newPasskeySuffix);
+  const circleUsername = toCircleUsername("keyprint", suffix);
 
   // Fetch passkey options before the tap, and keep them fresh while this page is open:
   // iPhone Safari only opens Face ID if the passkey call happens right after the tap.
   useEffect(() => {
-    if (session) return;
-    const first = setTimeout(() => {
+    if (session || busy) return;
+    const prefetch = () => {
       void prefetchPasskeyOptions("register", circleUsername);
       void prefetchPasskeyOptions("login");
-    }, 300);
-    const refresh = setInterval(() => {
-      void prefetchPasskeyOptions("register", circleUsername);
-      void prefetchPasskeyOptions("login");
-    }, 90_000);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") prefetch();
+    };
+    const first = setTimeout(prefetch, 300);
+    const refresh = setInterval(prefetch, 40_000);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", prefetch);
     return () => {
       clearTimeout(first);
       clearInterval(refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", prefetch);
     };
-  }, [circleUsername, session]);
+  }, [circleUsername, session, busy]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,7 +107,7 @@ export default function StartPage() {
       router.push("/home");
     } catch (err) {
       setError(describePasskeyError(err));
-      void prefetchPasskeyOptions("register", circleUsername); // ready for the next tap
+      setSuffix(newPasskeySuffix()); // the next attempt gets a fresh username (and prefetch)
     } finally {
       setBusy(null);
       setStep(null);

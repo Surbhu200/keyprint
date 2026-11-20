@@ -41,7 +41,9 @@ function clearBackup(recordId: string) {
   }
 }
 
-async function postOnce(payload: RecordSavePayload): Promise<{ ok: boolean; retryable: boolean; error?: string }> {
+type PostResult = { ok: boolean; retryable: boolean; status?: number; error?: string };
+
+async function postOnce(payload: RecordSavePayload): Promise<PostResult> {
   try {
     const res = await fetch("/api/records", {
       method: "POST",
@@ -52,15 +54,14 @@ async function postOnce(payload: RecordSavePayload): Promise<{ ok: boolean; retr
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
     // 409 = not visible on Arc yet; 5xx = server/index hiccup. 4xx otherwise won't improve.
     const retryable = res.status === 409 || res.status >= 500;
-    return { ok: false, retryable, error: data?.error || `HTTP ${res.status}` };
+    return { ok: false, retryable, status: res.status, error: data?.error || `HTTP ${res.status}` };
   } catch (err) {
     return { ok: false, retryable: true, error: err instanceof Error ? err.message : "Network error" };
   }
 }
 
-export async function saveRecordManifest(payload: RecordSavePayload): Promise<{ ok: boolean; error?: string }> {
-  writeBackup(payload);
-  let last: { ok: boolean; retryable: boolean; error?: string } = { ok: false, retryable: true };
+async function postWithRetries(payload: RecordSavePayload): Promise<{ ok: boolean; error?: string }> {
+  let last: PostResult = { ok: false, retryable: true };
   for (let attempt = 0; attempt < 3; attempt++) {
     last = await postOnce(payload);
     if (last.ok) {
@@ -68,20 +69,28 @@ export async function saveRecordManifest(payload: RecordSavePayload): Promise<{ 
       return { ok: true };
     }
     if (!last.retryable) {
-      // The server rejected the bytes (they don't match Arc): keeping them won't help.
-      clearBackup(payload.record_id);
+      // 422 = the bytes don't match what is sealed on Arc: keeping them can't help.
+      // Any other refusal keeps the local copy, since it is the only one.
+      if (last.status === 422) clearBackup(payload.record_id);
       return { ok: false, error: last.error };
     }
-    await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
   }
   return { ok: false, error: last.error };
 }
 
+export async function saveRecordManifest(payload: RecordSavePayload): Promise<{ ok: boolean; error?: string }> {
+  writeBackup(payload);
+  return postWithRetries(payload);
+}
+
 /** Saves several records; returns how many failed (their local copies are kept for a retry). */
 export async function saveRecordManifests(payloads: RecordSavePayload[]): Promise<number> {
+  // Back up every manifest first, so leaving the page mid-save can't lose the later ones.
+  for (const p of payloads) writeBackup(p);
   let failed = 0;
   for (const p of payloads) {
-    const res = await saveRecordManifest(p);
+    const res = await postWithRetries(p);
     if (!res.ok) failed += 1;
   }
   return failed;
@@ -116,6 +125,6 @@ export async function retryPendingRecordSaves(leaseId?: string): Promise<void> {
     }
     if (leaseId && payload.lease_id.toLowerCase() !== leaseId.toLowerCase()) continue;
     const res = await postOnce(payload);
-    if (res.ok || !res.retryable) clearBackup(payload.record_id);
+    if (res.ok || res.status === 422) clearBackup(payload.record_id);
   }
 }
