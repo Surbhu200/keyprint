@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Fingerprint, ShieldCheck } from "lucide-react";
@@ -16,32 +16,83 @@ import {
 } from "@/components/ui/card";
 import {
   loginPasskeyAccount,
+  prefetchPasskeyOptions,
   registerPasskeyAccount,
+  type PasskeyStep,
 } from "@/lib/chain/wallet";
 import { cn } from "@/lib/utils";
+
+const DEFAULT_NAME = "Keyprint renter";
+
+const STEP_LABEL: Record<PasskeyStep, string> = {
+  preparing: "Getting ready…",
+  faceid: "Confirm with Face ID, Touch ID or Windows Hello…",
+  verifying: "Checking your passkey…",
+  account: "Setting up your account…",
+};
+
+/** Plain-words passkey errors, plus the raw reason for troubleshooting. */
+function describePasskeyError(err: unknown): { message: string; detail: string } {
+  const name = err instanceof Error ? err.name : "";
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  const detail = `${name ? `${name}: ` : ""}${raw}`.slice(0, 220);
+  const text = `${name} ${raw}`.toLowerCase();
+  let message = raw.length > 0 && raw.length <= 160 ? raw : "The passkey didn't finish. Try again.";
+  if (text.includes("notallowederror") || text.includes("not allowed") || text.includes("cancel")) {
+    message =
+      "Face ID didn't open or was cancelled. On iPhone, open this page in Safari itself (not inside another app) and make sure iCloud Keychain is on (Settings → your name → iCloud → Passwords), then try again.";
+  } else if (text.includes("invalidstateerror")) {
+    message = "This device already has a Keyprint passkey. Tap “I already have a passkey”.";
+  } else if (text.includes("securityerror") || text.includes("relying party")) {
+    message = "This address can't use passkeys. Open keyprint-two.vercel.app directly in Safari or Chrome.";
+  } else if (text.includes("credential management api not supported")) {
+    message = "This browser can't use passkeys. Open the page in Safari or Chrome.";
+  } else if (text.includes("fetch") || text.includes("network")) {
+    message = "Couldn't reach the passkey service. Check your connection and try again.";
+  }
+  return { message, detail };
+}
 
 export default function StartPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const session = usePasskeySession();
   const [busy, setBusy] = useState<"register" | "login" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState<PasskeyStep | null>(null);
+  const [error, setError] = useState<{ message: string; detail: string } | null>(null);
+  const effectiveName = name.trim() || DEFAULT_NAME;
+
+  // Fetch passkey options before the tap, and keep them fresh while this page is open:
+  // iPhone Safari only opens Face ID if the passkey call happens right after the tap.
+  useEffect(() => {
+    if (session) return;
+    const first = setTimeout(() => {
+      void prefetchPasskeyOptions("register", effectiveName);
+      void prefetchPasskeyOptions("login");
+    }, 300);
+    const refresh = setInterval(() => {
+      void prefetchPasskeyOptions("register", effectiveName);
+      void prefetchPasskeyOptions("login");
+    }, 90_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(refresh);
+    };
+  }, [effectiveName, session]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setBusy("register");
     try {
-      await registerPasskeyAccount(name.trim() || "Renter");
+      await registerPasskeyAccount(effectiveName, setStep);
       router.push("/home");
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Passkey prompt was cancelled or could not finish.",
-      );
+      setError(describePasskeyError(err));
+      void prefetchPasskeyOptions("register", effectiveName); // ready for the next tap
     } finally {
       setBusy(null);
+      setStep(null);
     }
   };
 
@@ -49,16 +100,14 @@ export default function StartPage() {
     setError(null);
     setBusy("login");
     try {
-      await loginPasskeyAccount(name.trim() || undefined);
+      await loginPasskeyAccount(name.trim() || undefined, setStep);
       router.push("/home");
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Could not find an existing passkey on this device.",
-      );
+      setError(describePasskeyError(err));
+      void prefetchPasskeyOptions("login");
     } finally {
       setBusy(null);
+      setStep(null);
     }
   };
 
@@ -106,12 +155,12 @@ export default function StartPage() {
                     htmlFor="name"
                     className="text-sm font-medium text-foreground"
                   >
-                    Your name
+                    Your name <span className="text-muted-foreground font-normal">(optional)</span>
                   </label>
                   <input
                     id="name"
                     type="text"
-                    required
+                    autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Alex Rivera"
@@ -120,8 +169,14 @@ export default function StartPage() {
                 </div>
 
                 {error && (
-                  <div className="rounded-xl border border-claim/30 bg-claim/10 px-3.5 py-2.5 text-xs text-claim">
-                    {error}
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-claim/30 bg-claim/10 px-3.5 py-2.5 text-xs text-claim space-y-1"
+                  >
+                    <p>{error.message}</p>
+                    {error.detail && error.detail !== error.message && (
+                      <p className="text-[11px] opacity-80 break-words">Details: {error.detail}</p>
+                    )}
                   </div>
                 )}
 
@@ -133,7 +188,7 @@ export default function StartPage() {
                 >
                   <Fingerprint className="h-4 w-4" />
                   {busy === "register"
-                    ? "Waiting for passkey…"
+                    ? STEP_LABEL[step ?? "preparing"]
                     : "Create account with one touch"}
                 </Button>
 
@@ -144,7 +199,7 @@ export default function StartPage() {
                   disabled={busy !== null}
                   onClick={handleReturning}
                 >
-                  {busy === "login" ? "Signing in…" : "I already have a passkey"}
+                  {busy === "login" ? STEP_LABEL[step ?? "preparing"] : "I already have a passkey"}
                 </Button>
               </form>
             )}

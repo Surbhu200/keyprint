@@ -11,6 +11,7 @@ import {
 } from "@circle-fin/modular-wallets-core";
 import {
   createPublicClient,
+  custom,
   encodeFunctionData,
   erc20Abi,
   parseUnits,
@@ -146,20 +147,100 @@ async function resolveSmartAccountAddress(credential: P256Credential): Promise<A
   return account.address;
 }
 
+/** Where a passkey sign-up or sign-in is, so the screen can say what's happening. */
+export type PasskeyStep = "preparing" | "faceid" | "verifying" | "account";
+
+type OptionsMethod = "rp_getRegistrationOptions" | "rp_getLoginOptions";
+
+const PREFETCH_TTL_MS = 2 * 60 * 1000;
+let prefetchedOptions: Array<{ method: OptionsMethod; key: string; result: unknown; at: number }> = [];
+
+function realPasskeyTransport() {
+  const { clientUrl, clientKey } = getCircleConfig();
+  return toPasskeyTransport(clientUrl, clientKey)({ retryCount: 0 });
+}
+
+/**
+ * Fetches passkey options before the tap. Safari (iPhone) only opens Face ID when the
+ * passkey call happens right after the tap, so the network round trip has to happen first
+ * (Apple's own guidance). Safe to call often: fresh results are reused for 2 minutes.
+ */
+export async function prefetchPasskeyOptions(kind: "register" | "login", username = ""): Promise<void> {
+  if (typeof window === "undefined") return;
+  const method: OptionsMethod = kind === "register" ? "rp_getRegistrationOptions" : "rp_getLoginOptions";
+  const key = kind === "register" ? username.trim() : "";
+  const now = Date.now();
+  if (prefetchedOptions.some((o) => o.method === method && o.key === key && now - o.at < PREFETCH_TTL_MS)) {
+    return;
+  }
+  try {
+    const result = await realPasskeyTransport().request({ method, params: [key] } as never);
+    prefetchedOptions = [
+      ...prefetchedOptions.filter((o) => !(o.method === method && o.key === key)),
+      { method, key, result, at: Date.now() },
+    ];
+  } catch {
+    // Not fatal: the tap fetches options itself.
+  }
+}
+
+/** Takes (and removes) fresh prefetched options: each challenge is used once. */
+function takePrefetchedOptions(method: OptionsMethod, key: string): unknown | undefined {
+  const now = Date.now();
+  const hit = prefetchedOptions.find(
+    (o) => o.method === method && o.key === key && now - o.at < PREFETCH_TTL_MS,
+  );
+  prefetchedOptions = prefetchedOptions.filter((o) => !(o.method === method && o.key === key));
+  return hit?.result;
+}
+
+/**
+ * Circle's passkey transport, except the options step is answered from the prefetch when
+ * possible, so the browser's passkey prompt opens immediately after the tap.
+ */
+function passkeyTransportWithPrefetch(onStep?: (step: PasskeyStep) => void) {
+  const real = realPasskeyTransport();
+  return custom(
+    {
+      async request({ method, params }: { method: string; params?: unknown }) {
+        if (method === "rp_getRegistrationOptions" || method === "rp_getLoginOptions") {
+          const key =
+            method === "rp_getRegistrationOptions"
+              ? String((Array.isArray(params) ? params[0] : "") ?? "").trim()
+              : "";
+          const cached = takePrefetchedOptions(method, key);
+          const result =
+            cached !== undefined ? cached : await real.request({ method, params } as never);
+          onStep?.("faceid");
+          return result;
+        }
+        if (method === "rp_getRegistrationVerification" || method === "rp_getLoginVerification") {
+          onStep?.("verifying");
+        }
+        return real.request({ method, params } as never);
+      },
+    },
+    { key: real.config.key, name: real.config.name, retryCount: 0 },
+  );
+}
+
 /**
  * Registers a brand-new passkey on the current origin (Face ID / Windows Hello)
  * and resolves its deterministic Circle Modular Smart Account on Arc Testnet.
  */
 export async function registerPasskeyAccount(
   username: string,
+  onStep?: (step: PasskeyStep) => void,
 ): Promise<SavedPasskeySession> {
-  const { clientUrl, clientKey } = getCircleConfig();
+  getCircleConfig(); // fails fast with a clear message if the client key is missing
   const trimmed = username.trim() || "Keyprint User";
+  onStep?.("preparing");
   const credential = await toWebAuthnCredential({
-    transport: toPasskeyTransport(clientUrl, clientKey),
+    transport: passkeyTransportWithPrefetch(onStep),
     mode: WebAuthnMode.Register,
     username: trimmed,
   });
+  onStep?.("account");
 
   const cleanCredential = toP256Credential({
     id: credential.id,
@@ -185,13 +266,16 @@ export async function registerPasskeyAccount(
  */
 export async function loginPasskeyAccount(
   usernameHint?: string,
+  onStep?: (step: PasskeyStep) => void,
 ): Promise<SavedPasskeySession> {
-  const { clientUrl, clientKey } = getCircleConfig();
+  getCircleConfig();
+  onStep?.("preparing");
   const credential = await toWebAuthnCredential({
-    transport: toPasskeyTransport(clientUrl, clientKey),
+    transport: passkeyTransportWithPrefetch(onStep),
     mode: WebAuthnMode.Login,
     ...(usernameHint ? { username: usernameHint } : {}),
   });
+  onStep?.("account");
 
   const cleanCredential = toP256Credential({
     id: credential.id,
