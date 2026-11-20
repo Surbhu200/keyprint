@@ -150,6 +150,29 @@ async function resolveSmartAccountAddress(credential: P256Credential): Promise<A
 /** Where a passkey sign-up or sign-in is, so the screen can say what's happening. */
 export type PasskeyStep = "preparing" | "faceid" | "verifying" | "account";
 
+const CIRCLE_USERNAME = /^[A-Za-z0-9_@.:+-]{5,50}$/;
+
+/**
+ * Circle passkey usernames must be 5-50 characters of letters, digits and _@.:+- (no spaces).
+ * Turns any typed name into one, with a short suffix so two people named "Alex" don't collide.
+ */
+export function toCircleUsername(name: string, suffix: string): string {
+  const slug =
+    name
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "") // drop accents: "García" -> "Garcia"
+      .replace(/[^A-Za-z0-9_@.:+-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 40) || "keyprint";
+  const tail = suffix.replace(/[^A-Za-z0-9]/g, "").slice(0, 8) || "0000";
+  return `${slug}-${tail}`.slice(0, 50).padEnd(5, "0");
+}
+
+function randomSuffix(): string {
+  return Math.random().toString(36).slice(2, 7);
+}
+
 type OptionsMethod = "rp_getRegistrationOptions" | "rp_getLoginOptions";
 
 const PREFETCH_TTL_MS = 2 * 60 * 1000;
@@ -231,14 +254,18 @@ function passkeyTransportWithPrefetch(onStep?: (step: PasskeyStep) => void) {
 export async function registerPasskeyAccount(
   username: string,
   onStep?: (step: PasskeyStep) => void,
+  displayName?: string,
 ): Promise<SavedPasskeySession> {
   getCircleConfig(); // fails fast with a clear message if the client key is missing
-  const trimmed = username.trim() || "Keyprint User";
+  const typed = username.trim();
+  // Callers should pass a valid Circle username (see toCircleUsername); fix it up if not.
+  const circleUsername = CIRCLE_USERNAME.test(typed) ? typed : toCircleUsername(typed, randomSuffix());
+  const trimmed = displayName?.trim() || typed || circleUsername;
   onStep?.("preparing");
   const credential = await toWebAuthnCredential({
     transport: passkeyTransportWithPrefetch(onStep),
     mode: WebAuthnMode.Register,
-    username: trimmed,
+    username: circleUsername,
   });
   onStep?.("account");
 

@@ -18,11 +18,14 @@ import {
   loginPasskeyAccount,
   prefetchPasskeyOptions,
   registerPasskeyAccount,
+  toCircleUsername,
   type PasskeyStep,
 } from "@/lib/chain/wallet";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_NAME = "Keyprint renter";
+const DEFAULT_NAME = "Renter";
+// One suffix per page load, so the prefetched passkey options match the tap exactly.
+const PAGE_SUFFIX = Math.random().toString(36).slice(2, 7);
 
 const STEP_LABEL: Record<PasskeyStep, string> = {
   preparing: "Getting ready…",
@@ -34,7 +37,12 @@ const STEP_LABEL: Record<PasskeyStep, string> = {
 /** Plain-words passkey errors, plus the raw reason for troubleshooting. */
 function describePasskeyError(err: unknown): { message: string; detail: string } {
   const name = err instanceof Error ? err.name : "";
-  const raw = err instanceof Error ? err.message : String(err ?? "");
+  // viem wraps Circle's errors; its `details` holds Circle's own words.
+  const wrapped = err as { details?: unknown; shortMessage?: unknown } | null;
+  const raw =
+    (typeof wrapped?.details === "string" && wrapped.details) ||
+    (typeof wrapped?.shortMessage === "string" && wrapped.shortMessage) ||
+    (err instanceof Error ? err.message : String(err ?? ""));
   const detail = `${name ? `${name}: ` : ""}${raw}`.slice(0, 220);
   const text = `${name} ${raw}`.toLowerCase();
   let message = raw.length > 0 && raw.length <= 160 ? raw : "The passkey didn't finish. Try again.";
@@ -47,6 +55,8 @@ function describePasskeyError(err: unknown): { message: string; detail: string }
     message = "This address can't use passkeys. Open keyprint-two.vercel.app directly in Safari or Chrome.";
   } else if (text.includes("credential management api not supported")) {
     message = "This browser can't use passkeys. Open the page in Safari or Chrome.";
+  } else if (text.includes("username is invalid")) {
+    message = "That name can't be used for a passkey. Try letters and numbers only.";
   } else if (text.includes("fetch") || text.includes("network")) {
     message = "Couldn't reach the passkey service. Check your connection and try again.";
   }
@@ -61,35 +71,36 @@ export default function StartPage() {
   const [step, setStep] = useState<PasskeyStep | null>(null);
   const [error, setError] = useState<{ message: string; detail: string } | null>(null);
   const effectiveName = name.trim() || DEFAULT_NAME;
+  const circleUsername = toCircleUsername(effectiveName, PAGE_SUFFIX);
 
   // Fetch passkey options before the tap, and keep them fresh while this page is open:
   // iPhone Safari only opens Face ID if the passkey call happens right after the tap.
   useEffect(() => {
     if (session) return;
     const first = setTimeout(() => {
-      void prefetchPasskeyOptions("register", effectiveName);
+      void prefetchPasskeyOptions("register", circleUsername);
       void prefetchPasskeyOptions("login");
     }, 300);
     const refresh = setInterval(() => {
-      void prefetchPasskeyOptions("register", effectiveName);
+      void prefetchPasskeyOptions("register", circleUsername);
       void prefetchPasskeyOptions("login");
     }, 90_000);
     return () => {
       clearTimeout(first);
       clearInterval(refresh);
     };
-  }, [effectiveName, session]);
+  }, [circleUsername, session]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setBusy("register");
     try {
-      await registerPasskeyAccount(effectiveName, setStep);
+      await registerPasskeyAccount(circleUsername, setStep, effectiveName);
       router.push("/home");
     } catch (err) {
       setError(describePasskeyError(err));
-      void prefetchPasskeyOptions("register", effectiveName); // ready for the next tap
+      void prefetchPasskeyOptions("register", circleUsername); // ready for the next tap
     } finally {
       setBusy(null);
       setStep(null);
